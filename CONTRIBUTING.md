@@ -55,13 +55,24 @@ this; keep it accurate.
   way; `make` must work on a stock Linux box with `clang-18` and `lld-18`.
 - Structure layouts that the kernel and the HAL must agree on are pinned with
   `_Static_assert` on `sizeof`. If you add one, pin it.
-- Two target-specific hazards, both of which have bitten this code and are documented in
-  [`STORY.md`](STORY.md) (walls 33 and 34): the 604 runs **little-endian** here, where a
-  misaligned access traps instead of being fixed up in hardware; and LLVM will happily
-  re-create a misaligned access out of careful byte-at-a-time code, folding byte loads into
-  `lwz` and byte stores into `stw`. The `Makefile` passes
-  `-mllvm -combiner-store-merging=false` for the store side; the load side is blocked with
-  `volatile` at the point of access. Do not remove either without reading those two walls.
+- **The alignment hazard, which has bitten this code three times** (`STORY.md` walls 33, 34 and
+  42 — read them before writing any byte-at-a-time code). The 604 runs **little-endian** here,
+  where a misaligned access traps instead of being fixed up in hardware. LLVM will re-create
+  exactly the misaligned access you wrote byte-at-a-time to avoid, and it does so in three
+  different shapes:
+
+  | what you write | what you get | what stops it |
+  |---|---|---|
+  | four byte stores | one `stw` | `-mllvm -combiner-store-merging=false`, in the `Makefile`, globally |
+  | four byte loads, little-endian order | one `lwz` | **nothing global** — `volatile` at the point of access |
+  | four byte loads, big-endian order | one `lwbrx` | **nothing global** — `volatile` at the point of access |
+
+  The Makefile flag covers *stores only*. Every load-side assembly of a multi-byte value needs
+  `volatile` on the pointer, and the big-endian form is easy to miss because it folds to an
+  instruction the earlier walls never mention. Both current instances (`HalpGetUlong` in
+  `src/disk.c`, `HalpCudaGetTime` in `src/cuda.c`) say so in a comment; copy the pattern rather
+  than the idiom. `llvm-objdump -d build/hal.elf | grep -E 'lwbrx|stwbrx|lhbrx|sthbrx'` should
+  print nothing.
 - An eight-byte return value (`LARGE_INTEGER`, `PHYSICAL_ADDRESS`) comes back through a hidden
   pointer in `r3` on this ABI, so arguments start at `r4`. Such routines are declared here as
   `VOID` with an explicit out-pointer. Wall 20 in `STORY.md` is what happens when they are not.

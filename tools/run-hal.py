@@ -90,6 +90,10 @@ def main():
     ap.add_argument('--screenshot', default='')
     ap.add_argument('--scsi-log', action='store_true', help='turn on the emulator SCSI log for the run')
     ap.add_argument('--delta-patch', action='append', default=[], help='file[@lba] to write into the restored CD scratch delta after checkpoint.load (default lba 98069 = \\PPC\\HALEAGLE.DLL on the OEM 000-48303 CD)')
+    ap.add_argument('--computer-ups', type=int, default=5,
+                    help='how many Up presses reach the computer-type entry to select, counting\n'
+                         'from the menu default ("Other", last).  5 = MOTOROLA PowerStack on the\n'
+                         'stock CD; 3 = the slot mkoem.py repurposes for the Network Server')
     ap.add_argument('--scratch-dir', default='/tmp/gs-image-ro')
     ap.add_argument('--disk-delta', action='append', default=[],
                     help='delta.file|dir=raw.img: splice a raw disk image into a writable '
@@ -118,7 +122,7 @@ def main():
         out.append('debug.breakpoints.clear')
         for b in a.bp: out.append(f'debug.breakpoints.add {b}')
         out.append('echo "=== armed ${len(debug.breakpoints.entries)} breakpoints ==="')
-    keys(out, 5)                    # Other -> MOTOROLA PowerStack
+    keys(out, a.computer_ups)       # Other -> the computer type this HAL is registered as
     run_until_quiet(out, 20, 400, 'files')
     keys(out, 0)                    # Enter at the mass-storage screen
     run_until_quiet(out, 20, 400, 'video')

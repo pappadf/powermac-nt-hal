@@ -1014,6 +1014,147 @@ forty-minute run.
 
 ---
 
+## Part 11 — Installing, for real
+
+### Wall 41 — one drive letter per disk
+
+**Symptom.** *"Creating directory \WINNT…"*, then `STOP 0x1E (0xC0000005)` at `ntoskrnl+0x6D730`
+— the first instruction of `_wcsicmp`, `lhz r10,0(r3)`, reading a halfword at `r3 == 6`.
+
+**What it was.** Six is a `UNICODE_STRING`'s `Length` field, three characters — `"D:\"` —
+passed where its `Buffer` belonged. `IoAssignDriveLetters` created `\DosDevices\` links only for
+`\Device\Harddisk%d\Partition1`: **one letter per disk, not one per partition.** Setup numbers
+the volumes itself and called the install target `D:`; the HAL had given `D:` to the CD, and the
+volume being installed to had no symbolic link at all.
+
+**Fix.** Open each `\Device\Harddisk%d\Partition0` with `IoGetDeviceObjectPointer`, enumerate
+through the HAL's own `IoReadPartitionTable` (with `ReturnRecognizedPartitions` false, so the
+four-entries-per-table shape survives and entries 0–3 identify the MBR's own slots), then assign
+in NT's order: the first primary of each disk, then every logical drive, then the remaining
+primaries, then the CD-ROMs. If the scan fails, fall back to `Partition1` rather than leaving a
+disk with no letter at all.
+
+```
+HAL: C: -> \Device\Harddisk0\Partition1
+HAL: D: -> \Device\Harddisk0\Partition2
+HAL: IoAssignDriveLetters: boot device '\Device\CdRom0' -> E:, 0 floppy 1 disk 1 cdrom
+HAL: system path -> 'E:\PPC'
+```
+
+### Wall 42 — the compiler puts the misaligned access back, a third time
+
+**Symptom.** `STOP 0x1E (0x80000002)` at `hal.dll+0x1BC8`, in code written the same day.
+
+**What it was.** Cuda's clock arrives as four bytes, most significant first, so the new
+`HalpCudaGetTime` assembled them by hand — and clang folded the four byte loads into one
+**`lwbrx`**, load-word-byte-reversed, at `reply[3]`, which sits at 2 mod 4 on the stack:
+
+```
+80011bc4:  addi  3, 1, 18
+80011bc8:  lwbrx 3, 0, 3        <- the fault
+```
+
+This is wall 33's *big-endian twin*, and the Makefile's `-mllvm -combiner-store-merging=false`
+does not cover it: that is a store combine and this is a load. Wall 33's own note in
+`CONTRIBUTING.md` says the load side is "blocked with volatile where it matters" — which was true
+of `disk.c` and forgotten the moment new byte-assembly was written somewhere else.
+
+**Fix.** `volatile` at the point of access, as in `disk.c`. Verified by counting: **zero**
+byte-reversed accesses anywhere in the image.
+
+**Lesson, again.** A global flag that covers one direction reads like a global flag that covers
+the problem. It does not, and the half it misses is the half you will write next.
+
+### Wall 43 — a clock that answers is not a clock that is right
+
+**Symptom.** None. `HalQueryRealTimeClock` had returned a hardcoded date for weeks, which is
+invisible until you notice that every file NT installs is stamped with it.
+
+**Fix.** Cuda owns the clock: pseudo-command `0x03` reads it, `0x09` sets it, as a 32-bit count
+of seconds since 1904-01-01 delivered MSB first, which runs out in 2040. NT counts 100 ns units
+since 1601-01-01, and the two epochs are 110,667 days apart. The set path needs a 64-bit
+quotient — seconds-since-1601 is about 1.34 × 10¹⁰, so it does not fit in 32 bits — which is why
+`HalpDivU64` moved to `misc.c` and `disk.c` now shares it instead of keeping its own copy.
+
+```
+HAL: cuda clock e6c3ad1e -> 2026-9-6 23:51:58
+```
+
+Worth stating because "it returned TRUE" was not enough: `0xe6c3ad1e` is 3,871,583,518 seconds
+since 1904, which is 2026-09-06 23:51:58, checked independently. A clock that answers with
+nonsense is worse than one that does not answer, so the HAL traces the decoded value once.
+
+### Wall 44 — `The file haleagle.dll was not copied correctly`
+
+**Symptom.** With the drive letters fixed, Setup went three screens further than it ever had —
+through the filesystem choice, `\WINNT`, the surface scan — and began copying. Then:
+
+> The file haleagle.dll was not copied correctly. Although Setup did not encounter any errors
+> while copying this file, the copy Setup placed on your hard drive is not a valid Windows NT
+> system image.
+
+**What it was.** `haleagle.dll` is the file this HAL had been *impersonating* since wall 6: the
+HAL for MOTOROLA's PowerStack, whose extent we overwrite and whose menu entry we pick. That is
+fine for booting, because nothing checksums the HAL on the way in. It is not fine for
+installing. `[hal] powerstack_up = haleagle.dll, ,hal.dll` tells Setup to copy that file to the
+target as `hal.dll` — and Setup copies **the whole length the CD's directory record claims**,
+209,440 bytes, then checksums it. Our HAL is 42,496 bytes; the other 166,944 were still
+Microsoft's. Diagnosed without a single further run:
+
+```
+checksum over hal.dll's own 42496 bytes   0x129b7   = the stored value, self-consistent
+checksum over the 209440-byte slot        0x3b5d7   = what Setup computes
+```
+
+Which is wall 27 again — *"the checksum covers the directory-record length, not the length in
+the image"* — this time for the HAL rather than a driver.
+
+**Fix — and this one retires a workaround instead of adding one.** The honest answer was never
+padding; it was to stop impersonating. `tools/mkoem.py` gives the HAL a name and a machine of
+its own, entirely inside the existing ISO:
+
+- **`TXTSETUP.SIF`**, byte-for-byte the same length. The `bigbend_up` machine — MOTOROLA Big
+  Bend, which also used `haleagle.dll`, so nothing else loses its HAL — becomes `shiner_up`,
+  described as *"Apple Network Server 500/700"*, with `[Hal.Load]` and `[hal]` naming
+  `halshinr.dll` and `[SourceDisksFiles.ppc]` listing it. The substitutions net to zero: the
+  longer description costs six bytes and the `[Map.Computer]` line gives six back in alignment
+  spaces. A file that has to stay the size its directory record claims cannot grow.
+- **The `\PPC` directory block**, patched in place. `HALEAGLE.DLL` and `HALSHINR.DLL` are both
+  twelve bytes, so the record neither moves nor resizes — only the name changes, and the length
+  field becomes the real size of our image, which is what makes the checksum agree.
+
+Two things had to be discovered by trying. The patched SIF appeared to do nothing at first,
+because the checkpoint every run starts from is taken **at** the computer-type menu — SETUPLDR
+had already parsed the SIF before the snapshot, so patching it afterwards is too late. It has to
+go in at the pre-`go` checkpoint. (Wall 28 was the same mistake in a different disguise: a
+checkpoint downstream of the thing being patched.) And ISO 9660 wants directory records sorted
+by name, which ours no longer are — that turned out not to matter, because Setup's lookup scans
+linearly rather than searching.
+
+**Bought.** Setup's hardware menu, on the machine:
+
+```
+ 6  MOTOROLA PowerStack
+ 7  MOTOROLA PowerStack2
+ 8  Apple Network Server 500/700        <- ours, loading HALSHINR.DLL
+ 9  Powerized ES, MX, LX, TX (Uniprocessor)
+```
+
+and then, at last:
+
+```
+Please wait while Setup copies files to your hard disk.
+
+    Setup is copying files...        54%
+    [################                    ]
+                                          Copying: mfc40u.dll
+```
+
+**Windows NT installing itself onto an Apple Network Server.** Five things hold at once for that
+screen to exist: the drive letters resolve, the partition table reads and writes, the ARC
+environment answers, the clock timestamps the files, and the HAL is delivered under its own name
+through a `TXTSETUP.SIF` entry rather than by wearing another machine's.
+
 ## The ledger of workarounds
 
 Everything above that is *not* a fix, kept in one place so it is never forgotten:
@@ -1026,12 +1167,14 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 4 | `VrOpen`'s partition branch `nop`ed (wall 22) | same | same |
 | 5 | Eleven bytes renaming the veneer's SCSI model (wall 16) | same | a `TXTSETUP` `[Map.SCSI]` addition on an OEM disk would be cleaner |
 | 6 | `VideoPortVerifyAccessRanges` bypass (wall 25) | **defeats a correct conflict check** | a video driver that does not claim the `0xA0000` aperture |
-| 7 | `usbadb.sys`, a binary we may not redistribute | GPL-2.0 with no published source, so GPL §3 cannot be satisfied | our own port driver, from the `fpsidrv` template, on the HAL half that already exists |
-| 8 | The driver written over `\PPC\I8042PRT.SYS` | abuses a name SETUPLDR hardcodes | a proper OEM driver disk (`winnt.sif` + `txtsetup.oem`) |
-| 9 | `SYSTEMPARTITION` synthesised by the HAL from the loader's ARC disk list (wall 35) | on real ARC hardware it is NVRAM, written by `ARCINST.EXE`; the HAL guessing it is policy in the wrong place | an environment store backed by Open Firmware's own `nvram`, or an `ARCINST` equivalent for this machine |
-| 10 | The ARC environment does not survive a reboot | it is plain memory in the HAL | the same nvram-backed store |
-| 11 | Both partitions pre-created by `tools/mkarcdisk.py`, so Setup never runs its own partition-creation path (wall 39) | dodges the `setupdd.sys` crash rather than fixing it; a real install must be able to partition a blank disk from inside Setup | the drive-letter fix, after which Setup's own create-and-format path is worth retrying |
-| 12 | The MBR and system partition spliced into the checkpoint's copy-on-write delta at run time (`run-hal.py --disk-delta`) | a test-rig convenience, not a property of the machine: it exists so the disk boots without an MBR and gains one before SETUPLDR reads signatures (wall 36) | a cold-boot chain that starts from an already-partitioned disk, once the veneer's ARC path for it is trusted |
+| 7 | ~~The HAL delivered by overwriting `HALEAGLE.DLL` and selected as *MOTOROLA PowerStack*~~ **retired (wall 44)** | it impersonated another machine's HAL, and broke the moment Setup tried to install it | `tools/mkoem.py`: our own `[Computer]`, `[Hal.Load]` and `[hal]` entries, and `HALSHINR.DLL` by name |
+| 8 | The `TXTSETUP.SIF` and `\PPC` directory patches are applied to a *user's* CD image at run time | they edit proprietary media, even if only in a copy-on-write layer | a real OEM driver disk (`winnt.sif` + `txtsetup.oem`), which is the mechanism these patches imitate |
+| 9 | `usbadb.sys`, a binary we may not redistribute | GPL-2.0 with no published source, so GPL §3 cannot be satisfied | our own port driver, from the `fpsidrv` template, on the HAL half that already exists |
+| 10 | The driver written over `\PPC\I8042PRT.SYS` | abuses a name SETUPLDR hardcodes | a proper OEM driver disk (`winnt.sif` + `txtsetup.oem`) |
+| 11 | `SYSTEMPARTITION` synthesised by the HAL from the loader's ARC disk list (wall 35) | on real ARC hardware it is NVRAM, written by `ARCINST.EXE`; the HAL guessing it is policy in the wrong place | an environment store backed by Open Firmware's own `nvram`, or an `ARCINST` equivalent for this machine |
+| 12 | The ARC environment does not survive a reboot | it is plain memory in the HAL | the same nvram-backed store |
+| 13 | Both partitions pre-created by `tools/mkarcdisk.py`, so Setup never runs its own partition-creation path (wall 39) | dodges the `setupdd.sys` crash rather than fixing it; a real install must be able to partition a blank disk from inside Setup | the drive-letter fix, after which Setup's own create-and-format path is worth retrying |
+| 14 | The MBR and system partition spliced into the checkpoint's copy-on-write delta at run time (`run-hal.py --disk-delta`) | a test-rig convenience, not a property of the machine: it exists so the disk boots without an MBR and gains one before SETUPLDR reads signatures (wall 36) | a cold-boot chain that starts from an already-partitioned disk, once the veneer's ARC path for it is trusted |
 
 Workarounds 1–5 all live in the veneer and all exist because Microsoft's ARC shim was written for
 a machine whose firmware behaves slightly differently. They are load-time memory pokes, they are
