@@ -328,6 +328,13 @@ BOOLEAN RtlTimeFieldsToTime(PTIME_FIELDS TimeFields, PLARGE_INTEGER Time);
 PVOID ExAllocatePool(ULONG PoolType, ULONG NumberOfBytes);
 VOID ExFreePool(PVOID P);
 PCONFIGURATION_INFORMATION IoGetConfigurationInformation(VOID);
+typedef struct _FILE_OBJECT *PFILE_OBJECT;
+#define FILE_READ_DATA 0x0001
+/* Opens a device by name and hands back both the file object (to dereference afterwards) and
+ * the device object the HAL can send IRPs to. */
+NTSTATUS IoGetDeviceObjectPointer(PUNICODE_STRING ObjectName, ULONG DesiredAccess,
+                                  PFILE_OBJECT *FileObject, PDEVICE_OBJECT *DeviceObject);
+VOID ObDereferenceObject(PVOID Object);
 PIRP IoBuildSynchronousFsdRequest(ULONG MajorFunction, PDEVICE_OBJECT DeviceObject, PVOID Buffer,
                                   ULONG Length, PLARGE_INTEGER StartingOffset, PKEVENT Event,
                                   PIO_STATUS_BLOCK IoStatusBlock);

@@ -63,6 +63,8 @@
 #define CUDA_PKT_ADB    0x00
 #define CUDA_PKT_PSEUDO 0x01
 #define CUDA_CMD_AUTOPOLL 0x01   /* pseudo-command: one byte, nonzero starts auto-polling */
+#define CUDA_CMD_GET_TIME 0x03   /* reply carries 4 bytes, MSB first: seconds since 1904 */
+#define CUDA_CMD_SET_TIME 0x09   /* takes those same 4 bytes */
 
 #define CUDA_MAX_REPLY 24
 
@@ -82,7 +84,12 @@ static BOOLEAN HalpCudaBusy;         /* a transaction is in progress; keeps the 
  * the DPC at DISPATCH_LEVEL.  One producer at device IRQL, one consumer at 2. */
 #define ADB_RING 8
 static struct { UCHAR Data[CUDA_MAX_REPLY]; UCHAR Length; } HalpAdbRing[ADB_RING];
-static ULONG HalpAdbRingHead, HalpAdbRingTail;
+/* Single producer (the VIA interrupt, at the device IRQL) and single consumer (the DPC, at
+ * DISPATCH_LEVEL), which on this uniprocessor machine is safe without a lock: the consumer
+ * cannot preempt the producer.  volatile because the compiler must not cache either index
+ * across the delivery call.  An MP machine — the 700 can carry two 604e cards — would need a
+ * spin lock here; nothing else in this file assumes one processor. */
+static volatile ULONG HalpAdbRingHead, HalpAdbRingTail;
 static KDPC HalpAdbDpc;
 static BOOLEAN HalpAdbDpcReady;
 
@@ -264,6 +271,44 @@ static VOID HalpAdbDpcRoutine(PKDPC Dpc, PVOID Context, PVOID Arg1, PVOID Arg2)
     }
 }
 DEFINE_DESC(HalpAdbDpcRoutine);
+
+/* ---- the real-time clock ---------------------------------------------------------------------
+ * Cuda keeps the clock, as a 32-bit count of seconds since 1904-01-01 00:00 — the classic Mac
+ * epoch, delivered most significant byte first.  It runs out in 2040.
+ */
+BOOLEAN HalpCudaGetTime(PULONG Seconds)
+{
+    UCHAR cmd = CUDA_CMD_GET_TIME, reply[CUDA_MAX_REPLY];
+    ULONG n = HalpCudaRequest(CUDA_PKT_PSEUDO, &cmd, 1, reply, sizeof(reply));
+
+    /* [0] packet type, [1] flags, [2] the command echoed back, then the four bytes */
+    if (n < 7 || reply[2] != CUDA_CMD_GET_TIME) {
+        HalpPrint("HAL: cuda get-time failed (n %d)\n", n);
+        return FALSE;
+    }
+    /* volatile, and for the same reason as HalpGetUlong in disk.c — except that this is the
+     * big-endian twin of that trap.  Assembling a big-endian ULONG out of four byte loads is an
+     * idiom clang folds into one `lwbrx`, which faults here because reply[3] sits at 2 mod 4 on
+     * the stack.  The Makefile's -combiner-store-merging=false does not cover it: that is a
+     * store combine, and this is a load. */
+    volatile const UCHAR *p = reply;
+    *Seconds = ((ULONG)p[3] << 24) | ((ULONG)p[4] << 16) |
+               ((ULONG)p[5] << 8) | (ULONG)p[6];
+    return TRUE;
+}
+
+BOOLEAN HalpCudaSetTime(ULONG Seconds)
+{
+    UCHAR out[5], reply[CUDA_MAX_REPLY];
+    ULONG n;
+
+    volatile UCHAR *p = out;                /* the store-side twin: `stwbrx` at out[1] */
+    p[0] = CUDA_CMD_SET_TIME;
+    p[1] = (UCHAR)(Seconds >> 24); p[2] = (UCHAR)(Seconds >> 16);
+    p[3] = (UCHAR)(Seconds >> 8);  p[4] = (UCHAR)Seconds;
+    n = HalpCudaRequest(CUDA_PKT_PSEUDO, out, sizeof(out), reply, sizeof(reply));
+    return (BOOLEAN)(n >= 3 && reply[2] == CUDA_CMD_SET_TIME);
+}
 
 /* ---- setup --------------------------------------------------------------------------------- */
 
