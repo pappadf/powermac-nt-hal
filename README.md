@@ -61,7 +61,8 @@ where it stops:
 | Video | `cirrus.sys` initialises the 54M30 |
 | Clock | the real time, read from Cuda, so installed files are dated correctly |
 | Its own identity | Setup's hardware menu offers **"Apple Network Server 500/700"** and installs `HALSHINR.DLL` as the system's `hal.dll` — a `TXTSETUP.SIF` entry of our own, not another machine's HAL borrowed ([`tools/mkoem.py`](tools/mkoem.py)) |
-| Setup | Welcome → mass storage → licence → hardware confirmation → partition list → format → `\WINNT` → **copying Windows NT to the disk** |
+| Setup | Welcome → mass storage → licence → hardware confirmation → partition list → format → `\WINNT` → copying → **"This portion of Setup has completed successfully"**, with no bugcheck in the run |
+| The next wall | the restart. Setup wrote the installed system's boot configuration through `HalSetEnvironmentVariable`, but that store is in RAM — this machine has no ARC NVRAM — so a reboot loses the `OSLOADER` path the firmware would need |
 
 Screenshots of every screen are in [`traces/`](traces/).
 

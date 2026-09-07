@@ -1155,6 +1155,40 @@ screen to exist: the drive letters resolve, the partition table reads and writes
 environment answers, the clock timestamps the files, and the HAL is delivered under its own name
 through a `TXTSETUP.SIF` entry rather than by wearing another machine's.
 
+### The end of text-mode Setup
+
+It ran to the end. Sixty-one screens, **no bugcheck anywhere in the run**:
+
+> **This portion of Setup has completed successfully.**
+> Press ENTER to restart your computer.
+> When your computer restarts, Setup will continue.
+
+On the way there Setup wrote the installed system's boot configuration — through this HAL's
+`HalSetEnvironmentVariable`, which had been a stub returning `ENOMEM` two days earlier:
+
+```
+HAL: env set 'LoadIdentifier'  = 'Windows NT Workstation Version 4.00'
+HAL: env set 'OsLoader'        = 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)\os\winnt40\osloader.exe'
+HAL: env set 'OsLoadPartition' = 'multi(0)scsi(1)disk(0)rdisk(0)partition(2)'
+HAL: env set 'OsLoadFilename'  = '\WINNT'
+HAL: env set 'SystemPartition' = 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)'
+HAL: env set 'COUNTDOWN'       = '5'
+HAL: env set 'AUTOLOAD'        = 'YES'
+```
+
+Seven writes, one of them a *re-set* of a variable the HAL had already seeded — which is exactly
+the case wall 40's store-corruption bug would have scrambled. That bug was found by reading
+rather than by crashing, a day before the code path that would have exercised it existed. It is
+the clearest argument in this whole story for fixing what you find when you find it.
+
+**And the next wall is already visible in those eight lines.** They are in RAM (ledger row 12).
+Open Firmware has no ARC NVRAM to keep them in, so the restart the screen invites will lose
+every one of them — and `OSLOADER` is what the firmware would need them to find. Booting the
+installed system is the next phase, and it starts there.
+
+Screens: [`traces/`](traces/), `2026-09-07-setup-20-copying-files.png` through
+`-22-completed-successfully.png`.
+
 ## The ledger of workarounds
 
 Everything above that is *not* a fix, kept in one place so it is never forgotten:
