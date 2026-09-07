@@ -1,5 +1,8 @@
 # powermac-nt-hal — a Windows NT 4.0 HAL for the Apple Network Server
 
+[![build](https://github.com/pappadf/powermac-nt-hal/actions/workflows/build.yml/badge.svg)](https://github.com/pappadf/powermac-nt-hal/actions/workflows/build.yml)
+[![licence: GPL-2.0-only](https://img.shields.io/badge/licence-GPL--2.0--only-blue.svg)](LICENSE)
+
 *This exists because of [`entii-for-workcubes`](https://github.com/Wack0/entii-for-workcubes) and
 [`maciNTosh`](https://github.com/Wack0/maciNTosh) by **Wack0 (Rairii)**, and
 [`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit) by **MCJack123**. Reading
