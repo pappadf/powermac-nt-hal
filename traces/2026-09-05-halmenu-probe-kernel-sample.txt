@@ -1,0 +1,77 @@
+Checkpoint restored from tmp/nt-after-video.ckpt
+start: pc=0x800dbce4 srr0=0x800a8380 dar=0xb8007 msr=0x1b031
+sample 0: pc=0x800dee7c lr=0x800deca0 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802b9150 r3=0x800ab35c dec=0x888af2b5
+sample 1: pc=0x800b059c lr=0x800b0590 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802bb0d8 r3=0x0 dec=0x887e3b80
+sample 2: pc=0x800ab100 lr=0x800ab0e0 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x13031 r1=0x802bca50 r3=0x8074e2b0 dec=0x8871844a
+sample 3: pc=0x800dbca8 lr=0x800aff18 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802ba700 r3=0x802ba858 dec=0x8864cd15
+sample 4: pc=0x800dec44 lr=0x800dec44 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802bc0a8 r3=0x802bc0e0 dec=0x885815e0
+sample 5: pc=0x800ab0fc lr=0x800ab0e0 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802ba470 r3=0x8074e2b0 dec=0x884b5eaa
+sample 6: pc=0x800ab104 lr=0x800ab0e0 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802bc0d8 r3=0x8074e2b0 dec=0x883ea775
+sample 7: pc=0x800dbca8 lr=0x800dec5c srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802b9ac8 r3=0x802b9b28 dec=0x8831f040
+sample 8: pc=0x800dbc84 lr=0x800dec5c srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802bb730 r3=0x802bb8f0 dec=0x8825390a
+sample 9: pc=0x800ab104 lr=0x800ab0e0 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802b9af8 r3=0x8074e2b0 dec=0x881881d5
+sample 10: pc=0x800a8678 lr=0x800a8698 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x13031 r1=0x802bb3f8 r3=0x800d5b58 dec=0x880bcaa0
+sample 11: pc=0x800dbcec lr=0x800dec5c srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 msr=0x1b031 r1=0x802b9150 r3=0x802b9354 dec=0x87ff136a
+console since: []
+--- code at 0x800a8380 (srr0 region):
+$800A8340  ffff  stfd      f7,288(r1)  
+$800A8344  ffff  stfd      f8,296(r1)  
+$800A8348  ffff  stfd      f9,304(r1)  
+$800A834C  ffff  stfd      f10,312(r1) 
+$800A8350  ffff  stfd      f11,320(r1) 
+$800A8354  ffff  stfd      f12,328(r1) 
+$800A8358  ffff  stfd      f13,336(r1) 
+$800A835C  ffff  stw       r6,372(r1)  
+$800A8360  ffff  stw       r7,356(r1)  
+$800A8364  ffff  stfd      f0,344(r1)  
+$800A8368  ffff  mtfsf     255,f1      
+$800A836C  ffff  .long     $00000000   
+$800A8370  ffff  .long     $00000000   
+$800A8374  ffff  .long     $00000000   
+$800A8378  ffff  .long     $00000000   
+$800A837C  ffff  .long     $00000000   
+$800A8380  ffff  mfcr      r5          
+$800A8384  ffff  stw       r6,-10780(0)
+$800A8388  ffff  rlwinm    r6,r4,30,19,19
+$800A838C  ffff  mtcrf     8,r6        
+$800A8390  ffff  lwz       r6,-10828(0)
+$800A8394  ffff  bso       cr4,$800A841C
+$800A8398  ffff  lwz       r11,-10816(0)
+$800A839C  ffff  cmplw     cr1,r1,r6   
+true
+--- code at lr 0x800afebc-0x40:
+$800AFE7C  ffff  bne       cr1,$800AFEA0
+$800AFE80  ffff  lwz       r11,272(r30)
+$800AFE84  ffff  stw       r11,400(r31)
+$800AFE88  ffff  lwz       r9,276(r30) 
+$800AFE8C  ffff  stw       r9,404(r31) 
+$800AFE90  ffff  lwz       r8,280(r30) 
+$800AFE94  ffff  stw       r8,408(r31) 
+$800AFE98  ffff  lwz       r7,284(r30) 
+$800AFE9C  ffff  stw       r7,412(r31) 
+$800AFEA0  ffff  andi.     r10,r10,4   
+$800AFEA4  ffff  cmplwi    cr1,r10,4   
+$800AFEA8  ffff  bne       cr1,$800AFEE4
+$800AFEAC  ffff  addi      r4,r30,92   
+$800AFEB0  ffff  addi      r3,r31,264  
+$800AFEB4  ffff  li        r5,52       
+$800AFEB8  ffff  bl        $800DBBE0   
+$800AFEBC  ffff  nop                   
+$800AFEC0  ffff  addi      r4,r29,4    
+$800AFEC4  ffff  addi      r3,r31,316  
+$800AFEC8  ffff  li        r5,76       
+true
+--- low memory exception vectors (DSI at 0x300):
+$00000300  7c30  .long     $00000000   
+$00000304  7c32  .long     $00000000   
+$00000308  9041  .long     $00000000   
+$0000030C  9081  .long     $00000000   
+$00000310  7c52  .long     $00000000   
+$00000314  7c80  .long     $00000000   
+$00000318  7440  .long     $00000000   
+$0000031C  9001  .long     $00000000   
+$00000320  5040  .long     $00000000   
+$00000324  7c13  .long     $00000000   
+$00000328  4800  .long     $00000000   
+$0000032C  4082  .long     $00000000   
+true

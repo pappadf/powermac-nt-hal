@@ -1,0 +1,79 @@
+Checkpoint restored from tmp/nt-at-bugcheck.ckpt
+pc=0x800ab08c msr=0x1b031 r3=0x1e r4=0x80000002 r5=0x80651df8 r6=0x0 r7=0xffff
+--- code at the exception address 0x80651df8 (p2):
+$80651DC8  ffff  bne       cr1,$80651DEC
+$80651DCC  ffff  lwz       r4,0(r30)   
+$80651DD0  ffff  lis       r3,-32640   
+$80651DD4  ffff  bl        $80655070   
+$80651DD8  ffff  lwz       r2,4(r1)    
+$80651DDC  ffff  stw       r3,0(r31)   
+$80651DE0  ffff  lwz       r3,0(r31)   
+$80651DE4  ffff  cmplwi    cr1,r3,0    
+$80651DE8  ffff  beq       cr1,$80651F60
+$80651DEC  ffff  lwz       r11,0(r28)  
+$80651DF0  ffff  add       r11,r11,r3  
+$80651DF4  ffff  stw       r11,76(r1)  
+$80651DF8  ffff  lhz       r11,0(r11)  
+$80651DFC  ffff  cmplwi    cr1,r11,65535
+$80651E00  ffff  beq       cr1,$80651F38
+$80651E04  ffff  lwz       r11,76(r1)  
+$80651E08  ffff  lbz       r11,11(r11) 
+$80651E0C  ffff  cmplwi    cr1,r11,0   
+$80651E10  ffff  stb       r11,85(r1)  
+$80651E14  ffff  beq       cr1,$80651E24
+true
+--- code at first-DSI srr0 0x80139e74 (kernel):
+$80139E54  ffff  stw       r9,12(r3)   
+$80139E58  ffff  stw       r9,8(r3)    
+$80139E5C  ffff  extsb     r4,r4       
+$80139E60  ffff  stb       r4,86(r3)   
+$80139E64  ffff  li        r11,3       
+$80139E68  ffff  stb       r11,0(r3)   
+$80139E6C  ffff  li        r10,23      
+$80139E70  ffff  stb       r10,2(r3)   
+$80139E74  ffff  lwz       r8,0(r6)    
+$80139E78  ffff  lwz       r7,-29056(r2)
+$80139E7C  ffff  stw       r8,24(r3)   
+$80139E80  ffff  lwz       r6,4(r6)    
+$80139E84  ffff  addi      r11,r3,16   
+$80139E88  ffff  stw       r11,20(r3)  
+true
+--- code at first-DSI lr 0x801ad0e8-0x30:
+$801AD0B8  ffff  stwx      r11,r9,r10  
+$801AD0BC  ffff  addi      r10,r10,4   
+$801AD0C0  ffff  bdnz      $801AD0B4   
+$801AD0C4  ffff  bl        $801AD2CC   
+$801AD0C8  ffff  nop                   
+$801AD0CC  ffff  ori       r3,r24,0    
+$801AD0D0  ffff  li        r4,0        
+$801AD0D4  ffff  li        r5,-1       
+$801AD0D8  ffff  lis       r6,-16336   
+$801AD0DC  ffff  ori       r6,r6,3072  
+$801AD0E0  ffff  li        r7,0        
+$801AD0E4  ffff  bl        $80139E44   
+$801AD0E8  ffff  nop                   
+$801AD0EC  ffff  li        r11,127     
+$801AD0F0  ffff  stb       r11,87(r24) 
+$801AD0F4  ffff  lwz       r5,-28712(r2)
+true
+--- HAL base candidates (HalInitSystem prologue: stw r29,-12(r1); stw r30,-8(r1); ori r30,r4,0):
+$8067C3CC  ffff  addis     r25,r31,29759
+$8067C3D0  ffff  addis     r27,r21,21844
+$8067C3D4  ffff  addis     r25,r31,16191
+0x80650000: true
+$8067D3CC  ffff  addis     r25,r31,16191
+$8067D3D0  ffff  addis     r25,r31,16191
+$8067D3D4  ffff  addis     r25,r31,16191
+0x80651000: true
+$8067E3CC  ffff  addis     r25,r31,16191
+$8067E3D0  ffff  addis     r25,r31,16191
+$8067E3D4  ffff  addis     r25,r31,16191
+0x80652000: true
+$8067B3CC  ffff  .long     $00000300   
+$8067B3D0  ffff  .long     $00000000   
+$8067B3D4  ffff  .long     $00000000   
+0x8064f000: true
+$8068C3CC  ffff  rlwinm    r21,r10,10,21,11
+$8068C3D0  ffff  rlwinm    r21,r10,10,21,11
+$8068C3D4  ffff  rlwinm    r21,r10,10,21,11
+0x80660000: true

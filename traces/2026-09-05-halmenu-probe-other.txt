@@ -1,0 +1,22 @@
+Checkpoint restored from tmp/nt-hal-menu.ckpt
+=== probe other: 0 x Up, Enter ===
+breakpoint hit at $806040D8
+enter: pc=0x806040d8 r3=0xd (expect 0xd)
+=== output after Enter (chunks=20, quiet=20) ===
+\x9B22;16HOther                                            \x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B13;26HPlease insert the disk labeled\x9B14;26H\x9B15;26H\x9B16;26H\x9B17;26H         into Drive A:\x9B18;26H\x9B19;26H *  Press ENTER when ready.\x9B15;19HManufacturer-supplied hardware support disk\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HENTER=Continue  ESC=Cancel  F3=Exit                                           \x9B0m\x9B37m\x9B44m\x9B6;1H
+=== state: pc=0xff80ccf4 msr=0x13071 lr=0xff83054c srr0=0x522d4 srr1=0x13071 dar=0x801c7004 dsisr=0x42000000 ===
+r1=0x13071 r2=0xff8df800 r3=0x2 r4=0x5d939 r5=0xff8dc5c3 r13=0xdeadbeef r31=0xff800400
+$FF80CCF4  ffff  b         $FF80CCE4   
+$FF80CCF8  ffff  addi      r5,r5,1     
+$FF80CCFC  ffff  andi.     r3,r5,3     
+$FF80CD00  ffff  li        r0,0        
+$FF80CD04  ffff  beq       $FF80CD18   
+$FF80CD08  ffff  stb       r0,0(r5)    
+$FF80CD0C  ffff  addi      r5,r5,1     
+$FF80CD10  ffff  andi.     r3,r5,3     
+$FF80CD14  ffff  b         $FF80CD04   
+$FF80CD18  ffff  blr                   
+$FF80CD1C  ffff  .long     $00000000   
+$FF80CD20  ffff  .long     $FFFFFF98   
+true
+=== saved tmp/nt-after-other.ckpt ===

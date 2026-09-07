@@ -1,0 +1,39 @@
+Checkpoint restored from tmp/nt-hal-menu.ckpt
+=== probe powerstack: 5 x Up, Enter ===
+breakpoint hit at $806040D8
+key 1: pc=0x806040d8 r3=0x10000 (expect 0x10000)
+\x9B22;16HOther                                            \x9B0m\x9B34m\x9B47m\x9B21;16HPowerized MX, LX, TX (Multiprocessor)            \x9B0m\x9B37m\x9B44m
+key 2: pc=0xff809568 r3=0x4f638 (expect 0x10000)
+\x9B21;16HPowerized MX, LX, TX (Multiprocessor)            \x9B0m\x9B34m\x9B47m\x9B20;16HPowerized ES, MX, LX, TX (Uniprocessor)          \x9B0m\x9B37m\x9B44m
+breakpoint hit at $806040D8
+key 3: pc=0x806040d8 r3=0x10000 (expect 0x10000)
+\x9B20;16HPowerized ES, MX, LX, TX (Uniprocessor)          \x9B0m\x9B34m\x9B47m\x9B19;16HMOTOROLA Big Bend                                \x9B0m\x9B37m\x9B44m
+key 4: pc=0xff809594 r3=0xff8dfa00 (expect 0x10000)
+\x9B19;16HMOTOROLA Big Bend                                \x9B0m\x9B34m\x9B47m\x9B18;16HMOTOROLA PowerStack2                             \x9B0m\x9B37m\x9B44m
+breakpoint hit at $806040D8
+key 5: pc=0x806040d8 r3=0x10000 (expect 0x10000)
+\x9B18;16HMOTOROLA PowerStack2                             \x9B0m\x9B34m\x9B47m\x9B17;16HMOTOROLA PowerStack                              \x9B0m\x9B37m\x9B44m
+enter: pc=0xff813990 r3=0xff830684 (expect 0xd)
+=== output after Enter (chunks=40, quiet=40) ===
+\x9B17;16HMOTOROLA PowerStack                              OFClose(ff8d2900) failed
+\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (MOTOROLA PowerStack)...                               \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1HOFClose(ff8d2680) failed
+\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Configuration Data)...                     \x9B0m\x9B37m\x9B44m\x9B6;1HOFClose(ff8d2400) failed
+\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Setup Font)...                                        \x9B0m\x9B37m\x9B44m\x9B6;1HOFClose(ff8d2180) failed
+\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1HOFClose(ff8d1f00) failed
+\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B13;26HPlease insert the disk labeled\x9B14;26H\x9B15;26H\x9B16;26H\x9B17;26H         into Drive A:\x9B18;26H\x9B19;26H *  Press ENTER when ready.\x9B15;26HWindows NT Workstation CD-ROM\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HENTER=Continue  F3=Exit                                                       \x9B0m\x9B37m\x9B44m\x9B6;1H
+=== state: pc=0xff809fb4 msr=0x13071 lr=0xff813d28 srr0=0x522d4 srr1=0x13071 dar=0x8069f004 dsisr=0x42000000 ===
+r1=0x13071 r2=0xff8df800 r3=0xff813d2c r4=0xff8dff48 r5=0x967efffc r13=0xdeadbeef r31=0xff8003f4
+$FF809FB4  ffff  mtctr     r3          
+$FF809FB8  ffff  lwz       r20,0(r31)  
+$FF809FBC  ffff  addi      r31,r31,4   
+$FF809FC0  ffff  beqlr                 
+$FF809FC4  ffff  bctr                  
+$FF809FC8  ffff  .long     $FFFFFFC8   
+$FF809FCC  ffff  .long     $045ABF80   
+$FF809FD0  ffff  oris      r28,r1,25093
+$FF809FD4  ffff  .long     $00003E6F   
+$FF809FD8  ffff  mflr      r18         
+$FF809FDC  ffff  addi      r3,r18,4    
+$FF809FE0  ffff  mtctr     r3          
+true
+=== saved tmp/nt-after-powerstack.ckpt ===

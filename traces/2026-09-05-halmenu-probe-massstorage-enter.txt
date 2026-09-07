@@ -1,0 +1,25 @@
+Checkpoint restored from tmp/nt-after-powerstack-closefix.ckpt
+breakpoint hit at $806040D8
+enter: pc=0x806040d8 r3=0xd (expect 0xd)
+=== output after Enter (chunks=60, quiet=60) ===
+\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (ESDI/IDE Hard Disk)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT File System (NTFS))...                     \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HENTER=Select  ESC=Cancel  F3=Exit                                             \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B5;3HSetup could not determine the type of video adapter installed in the system.\x9B6;3H\x9B7;3HSelect the video Adapter you want from the following list, or select "Other"\x9B8;3Hif you have a device support disk provided by an adapter manufacturer.\x9B9;3H\x9B11;10H\xC9\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBB\x9B12;10H\xBA E10 Graphics Adapter (S3 864)                             \xBA\x9B13;10H\xBA E10 Graphics Adapter (S3 928)                             \xBA\x9B14;10H\xBA E10 Graphics Adapter (S3 964)                             \xBA\x9B15;10H\xBA S10/S15/H10 Graphics Adapter (Weitek p9100; Frame Buffer) \xBA\x9B16;10H\xBA Standard VGA                                              \xBA\x9B17;10H\xBA G10 Graphics Adapter (Western Digital 90C24A; ThinkPad)   \xBA\x9B18;10H\xBA Motorola Power Stack (cirrus 54xx)                        \xBA\x9B19;10H\xBA FirePower Powerized Graphics Adapter                      \xBA\x9B20;10H\xBA Other                                                     \xBA\x9B21;10H\xC8\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBC\x9B0m\x9B34m\x9B47m\x9B20;12HOther                                                    \x9B0m\x9B37m\x9B44m
+=== state: pc=0xff8307b0 msr=0x13071 lr=0xff8307b0 srr0=0x522d4 srr1=0x13071 dar=0x80252004 dsisr=0x42000000 ===
+r1=0x13071 r2=0xff8df800 r3=0xff819288 r4=0xff800fe0 r5=0x967efffc r13=0xdeadbeef r31=0xff8003fc sdr1=0x3fe0000 bat0u=0x0 bat0l=0x0 dbat0u=0x0 dbat0l=0x0
+$FF8307B0  ffff  b         $FF809220   
+$FF8307B4  ffff  .long     $00000000   
+$FF8307B8  ffff  .long     $FFFFFFC8   
+$FF8307BC  ffff  .long     $09CCB780   
+$FF8307C0  ffff  andis.    r5,r3,26377 
+$FF8307C4  ffff  xori      r18,r11,29811
+$FF8307C8  ffff  .long     $0000676E   
+$FF8307CC  ffff  .long     $00000000   
+$FF8307D0  ffff  stwu      r19,-4(r30) 
+$FF8307D4  ffff  mflr      r19         
+$FF8307D8  ffff  bl        $FF830790   
+$FF8307DC  ffff  bl        $FF80B5F0   
+$FF8307E0  ffff  bl        $FF81D848   
+$FF8307E4  ffff  b         $FF809220   
+$FF8307E8  ffff  .long     $FFFFFFD0   
+$FF8307EC  ffff  .long     $09CDB780   
+true
+=== saved ===

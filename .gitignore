@@ -1,0 +1,24 @@
+# Build output: hal.dll and everything on the way to it, including the import/export stubs
+# that mkstubs.py generates from hal.imports / hal.exports.
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Editor and OS noise
+*.swp
+*~
+.DS_Store
+
+# Nothing copyrighted belongs in this repository: no ROMs, no CD images, no disk images,
+# no Microsoft binaries, no vendor PDFs.  These patterns are a backstop, not a policy —
+# the policy is in CONTRIBUTING.md.
+*.rom
+*.iso
+*.img
+*.ckpt
+*.pdf
+HAL*.DLL
+SETUPLDR
+VENEER.EXE

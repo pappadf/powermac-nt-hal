@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 powermac-nt-hal contributors
+#
+# Proves the central claim of this project: HAL.DLL for Windows NT 4.0 PowerPC builds from
+# source with clang, lld and a Python script, and no Microsoft tool anywhere in the build.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hal:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang and lld
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 lld-18 llvm-18
+
+      - name: Build
+        run: make
+
+      - name: Check what came out
+        run: |
+          set -e
+          test -f build/hal.dll
+          # A PowerPC (little-endian) PE that NT's loader will accept: machine 0x01F0.
+          python3 tools/pe-exports.py build/hal.dll | tee /tmp/pe.txt
+          grep -q '01f0\|0x1f0' /tmp/pe.txt
+          # Every name the shipped HALs export has to be present, or SETUPLDR cannot bind
+          # the kernel to us.
+          missing=0
+          while read -r name; do
+            case "$name" in ''|\#*) continue;; esac
+            grep -qw "${name%% *}" /tmp/pe.txt || { echo "missing export: $name"; missing=1; }
+          done < hal.exports
+          test "$missing" = 0
+
+      - name: Licence hygiene
+        run: |
+          set -e
+          bad=0
+          for f in src/*.c src/*.S include/*.h tools/*.py Makefile hal.ld hal.exports hal.imports; do
+            head -6 "$f" | grep -q '^\(/\*\| \*\|#\) SPDX-License-Identifier: GPL-2.0-only$' \
+              || { echo "$f: missing or malformed SPDX identifier (it must be alone on its line)"; bad=1; }
+            head -6 "$f" | grep -q 'Copyright (C) 2026 powermac-nt-hal contributors' \
+              || { echo "$f: no copyright line"; bad=1; }
+          done
+          # Nothing we may not redistribute, ever.
+          for pat in halgoss.dll usbadb.sys atapimio.sys offrmbuf.sys HALEAGLE.DLL SETUPLDR VENEER.EXE; do
+            find . -name "$pat" -not -path './.git/*' | grep . && { echo "$pat must never be committed"; bad=1; }
+          done
+          test "$bad" = 0
+
+      - name: Rebuild from clean, byte for byte
+        run: |
+          cp build/hal.dll /tmp/hal-first.dll
+          make clean
+          make
+          cmp /tmp/hal-first.dll build/hal.dll
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hal.dll
+          path: build/hal.dll
+          if-no-files-found: error

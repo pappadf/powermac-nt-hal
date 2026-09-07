@@ -1,0 +1,206 @@
+Checkpoint restored from tmp/nt-hal-menu-opfs4.ckpt
+true
+=== delta patched: /tmp/gs-image-ro/bd75b0bc43f15a1a.delta lba 98069 <- local/powermac-nt-hal/halshinr/build/hal.dll (26112 bytes) ===
+=== iso tmp/nt-hal.iso ===
+=== poke 0x5474c was 0x4086003c -> 0x60000000 ===
+=== armed 1 breakpoints ===
+
+=== files: chunks=20 quiet=20 ===
+ Other  Powerized MX, LX, TX (Multiprocessor)  Powerized MX, LX, TX (Multiprocessor)  Powerized ES, MX, LX, TX (Uniprocessor)  Powerized ES, MX, LX, TX (Uniprocessor)  MOTOROLA Big Bend  MOTOROLA Big Bend  MOTOROLA PowerStack2  MOTOROLA PowerStack2  MOTOROLA PowerStack  MOTOROLA PowerStack  Setup is loading files (MOTOROLA PowerStack)...  Setup is loading files (Windows NT Configuration Data)...  Setup is loading files (Setup Font)...  Setup is loading files (Locale-Specific Data)...  Setup is loading files (Locale-Specific Data)...  Setup is loading files (Locale-Specific Data)...  Setup is loading files (Windows NT Setup)...  Setup is loading files (Windows NT Setup)...  Setup is loading files (PCMCIA Support)...  Setup is loading files (SCSI Port Driver)...  Setup could not determine the type of one or more mass storage devices installed in your system, or you have chosen to manually specify an adapter. Currently, Setup will load support for the following mass storage devices(s):  Symbios Logic C810 PCI SCSI Host Adapter  * To specify additional SCSI adapters, CD-ROM drives, or special  disk controllers for use with Windows NT, including those for which  you have a device support disk from a mass storage device  manufacturer, press S.  * If you do not have any device support disks from a mass storage  device manufacturer, or do not want to specify additional  mass storage devices for use with Windows NT, press ENTER.  S=Specify Additional Device  ENTER=Continue  F3=Exit  
+
+=== video: chunks=20 quiet=20 ===
+  Setup is loading files (Symbios Logic C810 PCI SCSI Host Adapter)...  Setup is loading files (ESDI/IDE Hard Disk)...  Setup is loading files (Windows NT File System (NTFS))...  ENTER=Select  ESC=Cancel  F3=Exit  Setup could not determine the type of video adapter installed in the system.  Select the video Adapter you want from the following list, or select "Other" if you have a device support disk provided by an adapter manufacturer.  \xC9=\xBB \xBA E10 Graphics Adapter (S3 864)  \xBA \xBA E10 Graphics Adapter (S3 928)  \xBA \xBA E10 Graphics Adapter (S3 964)  \xBA \xBA S10/S15/H10 Graphics Adapter (Weitek p9100; Frame Buffer) \xBA \xBA Standard VGA  \xBA \xBA G10 Graphics Adapter (Western Digital 90C24A; ThinkPad)  \xBA \xBA Motorola Power Stack (cirrus 54xx)  \xBA \xBA FirePower Powerized Graphics Adapter  \xBA \xBA Other  \xBA \xC8=\xBC  Other  
+
+breakpoint hit at $80703304
+=== BP 0x80703304 hit #1: r3=0xee4dc1b0 r4=0x4 r5=0x806fc480 r6=0x800f5d28 r7=0x1480002 r8=0x1b031 r9=0x0 r10=0x81000000 r11=0x80700730 r12=0x80703304 lr=0x806f1a28 r1=0xe6e84630 msr=0x1b031 
+$80703304  ffff  stw  r31,-4(r1)  
+$80703308  ffff  stwu  r1,-64(r1)  
+$8070330C  ffff  mflr  r31  
+$80703310  ffff  addi  r6,r1,56  
+$80703314  ffff  addi  r3,r3,-184  
+$80703318  ffff  bl  $80702EFC  
+true
+
+=== kernel: chunks=30 quiet=30 ===
+ Other  FirePower Powerized Graphics Adapter  FirePower Powerized Graphics Adapter  Motorola Power Stack (cirrus 54xx)  Motorola Power Stack (cirrus 54xx)  Setup is loading files (Motorola Power Stack (cirrus 54xx))...  Setup is loading files (Video Driver)...  Setup is loading files (Floppy Disk Driver)...  Setup is loading files (SCSI CD-ROM)...  Setup is loading files (SCSI CD-ROM)...  Setup is loading files (SCSI Disk)...  Setup is loading files (SCSI Floppy Disk)...  Setup is loading files (Keyboard Driver)...  Setup is loading files (Keyboard Driver)...  Setup is loading files (FAT File System)...  Setup is loading files (CD-ROM File System)...  
+HAL: halshinr build 28 (HALSHINR-BUILD28-MARKER) for the Apple Network Server (phase 0)
+HAL: I/O base b0000000, PVR 00040103, MSR 00013031, PCR 8000e000, loader block 807f0000
+HAL: GC events 00001000 mask 00100000 levels 00000000
+HAL: boot device multi(0)scsi(0)cdrom(0)fdisk(0)
+HAL: hal path (null), options /NODEBUG
+HAL: arc disk sig 20202020 sum d277fb75 valid 0 'multi(0)scsi(0)cdrom(0)fdisk(0)'
+HAL: arc disk sig 00000000 sum 29f28bb3 valid 0 'multi(0)scsi(1)disk(0)rdisk(0)'
+HAL: 53 memory descriptors, 16384 pages; PCR irql 1, kseg0 top 80800000
+HAL: System/0 key 00000000 'device-tree' cfg 106
+HAL:  Processor/1 key 00000000 'PowerPC(604)' cfg 0
+HAL:  Cache/3 key 01050002 '' cfg 0
+HAL:  Cache/4 key 01050002 '' cfg 0
+HAL:  Memory/37 key 00000000 'memory' cfg 24
+HAL:  Adapter/12 key 00000000 'PCI' cfg 24 [v1.2 n=1: port f2000000+02000000]
+HAL:  Adapter/10 key 00000000 'NCRC810' cfg 40 [v1.2 n=2: port 00000000+00000100 irq lvl 1 vec 0]
+HAL:  Controller/15 key 00000000 'SONY  CD-ROM CDU-8002 1.8g' cfg 0
+HAL:  Peripheral/26 key 00000000 '' cfg 0
+HAL:  Adapter/10 key 00000001 'NCRC810' cfg 40 [v1.2 n=2: port 00000000+00000100 irq lvl 1 vec 0]
+HAL:  Controller/13 key 00000000 'MINISCRB8425S  1.0' cfg 0
+HAL:  Peripheral/25 key 00000000 '' cfg 0
+HAL:  Adapter/10 key 00000000 'UNKNOWN SCSI' cfg 24 [v1.2 n=1: type0]
+HAL:  Controller/18 key 00000000 'UNKNOWN NETWORK' cfg 24 [v1.2 n=1: type0]
+HAL:  Peripheral/36 key 00000000 '' cfg 0
+HAL:  Controller/17 key 00000000 'ch-a' cfg 48 [v1.2 n=2: type0 devspec 8]
+HAL:  Peripheral/35 key 00000000 '' cfg 0
+HAL:  Controller/17 key 00000001 'ch-b' cfg 48 [v1.2 n=2: type0 devspec 8]
+HAL:  Peripheral/35 key 00000001 '' cfg 0
+HAL:  Controller/24 key 00000000 'swim3' cfg 24 [v1.2 n=1: type0]
+HAL:  Peripheral/34 key 00000000 '' cfg 0
+HAL:  Controller/22 key 00000000 'adb' cfg 0
+HAL:  Peripheral/32 key 00000000 'PCAT_ENHANCED' cfg 0
+HAL:  Controller/21 key 00000000 'adb' cfg 0
+HAL:  Peripheral/31 key 00000000 'PS2 MOUSE' cfg 0
+HAL:  Controller/19 key 00000000 'STB,HORIZON+' cfg 24 [v1.2 n=1: mem 00000000+01000000]
+HAL:  Peripheral/29 key 00000000 '1024x768' cfg 0
+HAL:  Cache/7 key 01030007 '' cfg 0
+HAL:  Adapter/12 key 00000001 'PCI' cfg 24 [v1.2 n=1: port f4000000+02000000]
+HAL:  Adapter/12 key 00000002 'pci106b-1' cfg 0
+HAL:  Adapter/12 key 00000003 'pci106b-1' cfg 0
+HAL: GetBusData PCI bus 0 slot 00000011 off 00000000 len 64 -> 64 (00011000)
+HAL: ScsiAdapter 0 (NCRC810) -> mem f3100000 io 00000400 irq 22
+HAL: GetBusData PCI bus 0 slot 00000012 off 00000000 len 64 -> 64 (00011000)
+HAL: ScsiAdapter 1 (NCRC810) -> mem f3103000 io 00000800 irq 26
+HAL: phase 0 done
+HAL: decrementer tick 1
+HAL: decrementer tick 2
+HAL: decrementer tick 3
+Microsoft (R) Windows NT (TM) Version 4.0 (Build 1381).
+
+HAL: phase 1
+HAL: GetBusData PCI bus 0 slot 0000000f off 00000000 len 64 -> 64 (00a01013)
+HAL: 54M30 bar0 81000000 bar1 00010001 cmd 0004
+HAL: OEM font 8075b1c8  8x12  chars 00000001..000000fe
+HAL: 54M30 console 640x480, font 8x12, 80x40 chars, fb 81000000
+HAL: module ntoskrnl.exe at 8007b000 size 00142000
+HAL: module hal.dll at 80647000 size 0000a000
+HAL: module setupdd.sys at 80678000 size 00049000
+HAL: module SPDDLANG.SYS at 8003f000 size 00000d20
+HAL: module pcmcia.sys at 806c1000 size 00010000
+HAL: module SCSIPORT.SYS at 806d1000 size 0000dd20
+HAL: module symc810.sys at 806df000 size 000079e0
+HAL: module atdisk.sys at 806e7000 size 00009800
+HAL: module ntfs.sys at 801bd000 size 00091000
+HAL: module cirrus.sys at 806f1000 size 0000ede0
+HAL: module VIDEOPRT.SYS at 80700000 size 00007720
+HAL: module floppy.sys at 80708000 size 00007d40
+HAL: module cdrom.sys at 80710000 size 0000a000
+HAL: module CLASS2.SYS at 8071a000 size 00005680
+HAL: module disk.sys at 80720000 size 00005ec0
+HAL: module sfloppy.sys at 80726000 size 000035e0
+HAL: module i8042prt.sys at 8072a000 size 00009700
+HAL: module kbdclass.sys at 80734000 size 00003d20
+HAL: module fastfat.sys at 8024e000 size 0003e000
+HAL: module cdfs.sys at 8028c000 size 0001b000
+1 System Processor [64 MB Memory] MultiProcessor Kernel
+
+HAL: TranslateBusAddress type 1 bus 0 addr 000003e0 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000003e2 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000003e4 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000240 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000250 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000260 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000270 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000280 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000290 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000002a0 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000002b0 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000002c0 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000002d0 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000002e0 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000002f0 space 1
+HAL: HalAssignSlotResources bus 0 dev 17 fn 0 -> 4 resources
+HAL: TranslateBusAddress type 5 bus 0 addr f3100000 space 0
+HAL: GetAdapter type 5 bus 0 master 1 sg 1 maxlen 00ffffff
+HAL: GetInterruptVector type 5 bus 0 level 22 vector 22
+HAL: EnableSystemInterrupt vector 54 irql 24
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: ext int: events 00400000 mask 00400000 pending 00400000
+HAL: HalAssignSlotResources bus 0 dev 18 fn 0 -> 4 resources
+HAL: TranslateBusAddress type 5 bus 0 addr f3103000 space 0
+HAL: GetAdapter type 5 bus 0 master 1 sg 1 maxlen 00ffffff
+HAL: GetInterruptVector type 5 bus 0 level 26 vector 26
+HAL: EnableSystemInterrupt vector 58 irql 24
+HAL: GetBusData PCI bus 0 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 0 slot 0000000f off 00000000 len 64 -> 64 (00a01013)
+HAL: GetBusData PCI bus 0 slot 00000010 off 00000000 len 64 -> 64 (0002106b)
+HAL: GetBusData PCI bus 0 slot 00000011 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 00000012 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 0 slot 0000000f off 00000000 len 64 -> 64 (00a01013)
+HAL: GetBusData PCI bus 0 slot 00000010 off 00000000 len 64 -> 64 (0002106b)
+HAL: GetBusData PCI bus 0 slot 00000011 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 00000012 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 0 slot 0000000f off 00000000 len 64 -> 64 (00a01013)
+HAL: GetBusData PCI bus 0 slot 00000010 off 00000000 len 64 -> 64 (0002106b)
+HAL: GetBusData PCI bus 0 slot 00000011 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 00000012 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 0 slot 0000000f off 00000000 len 64 -> 64 (00a01013)
+HAL: GetBusData PCI bus 0 slot 00000010 off 00000000 len 64 -> 64 (0002106b)
+HAL: GetBusData PCI bus 0 slot 00000011 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 00000012 off 00000000 len 64 -> 64 (00011000)
+HAL: GetBusData PCI bus 0 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 0 slot 0000000f off 00000000 len 64 -> 64 (00a01013)
+HAL: HalAssignSlotResources bus 0 dev 15 fn 0 -> 2 resources
+HAL: TranslateBusAddress type 5 bus 0 addr 000003b0 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003bb space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003c0 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003df space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000a0000 space 0
+HAL: TranslateBusAddress type 5 bus 0 addr 000bffff space 0
+HAL: TranslateBusAddress type 5 bus 0 addr 81000000 space 0
+HAL: TranslateBusAddress type 5 bus 0 addr 81ffffff space 0
+HAL: TranslateBusAddress type 5 bus 0 addr 000003b0 space 1
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetBusData PCI bus 1 slot 0000000b off 00000000 len 64 -> 64 (0001106b)
+HAL: GetInterruptVector type 5 bus 0 level 1 vector 1
+HAL: GetInterruptVector type 5 bus 0 level 12 vector 12
+HAL: TranslateBusAddress type 5 bus 0 addr 00000060 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 00000060 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 00000060 space 1
+HAL: IoAssignDriveLetters (not implemented)
+HAL: TranslateBusAddress type 5 bus 0 addr 81000000 space 0
+
+=== state: pc=0x806aa2d8 msr=0x1b031 lr=0x806aa2d4 srr0=0x806aa2d8 srr1=0xb031 dar=0xefbaf4b8 dsisr=0x40000000 ===
+r1=0xe6fb49a0 r2=0x806802a0 r3=0x806b42d0 r4=0x15 r5=0x8 r6=0x806b42b8 r7=0x0 r11=0x280 r12=0x8014ebc8 r31=0x80692550
+$806AA2D8  ffff  b  $806AA2D8  
+$806AA2DC  ffff  mflr  r11  
+$806AA2E0  ffff  bl  $806ACA84  
+$806AA2E4  ffff  ori  r24,r3,0  
+$806AA2E8  ffff  ori  r19,r4,0  
+$806AA2EC  ffff  ori  r21,r5,0  
+$806AA2F0  ffff  ori  r23,r6,0  
+$806AA2F4  ffff  ori  r14,r7,0  
+$806AA2F8  ffff  stw  r11,-76(r1) 
+$806AA2FC  ffff  stw  r2,8(r1)  
+$806AA300  ffff  stwu  r1,-192(r1) 
+$806AA304  ffff  lwz  r11,-32516(r2)
+true
+Screenshot saved to 'tmp/hal/run69.png' (640x480).
+tmp/hal/run69.log.gs: line 268: 'checksum' is a method; use a call form
+line 1: include: 'tmp/hal/run69.log.gs' failed

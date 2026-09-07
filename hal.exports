@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 powermac-nt-hal contributors
+# Functions are exported through their descriptors; "DATA" marks a variable.
+# The 69 names an NT 4.0 PowerPC HAL exports, read from the shipped HALs' export tables with
+# tools/pe-exports.py.  Names of a published interface, read and not copied; see PROVENANCE.md.
+HalAcquireDisplayOwnership
+HalAdjustResourceList
+HalAllProcessorsStarted
+HalAllocateAdapterChannel
+HalAllocateCommonBuffer
+HalAllocateCrashDumpRegisters
+HalAssignSlotResources
+HalCalibratePerformanceCounter
+HalCallBios
+HalDisableSystemInterrupt
+HalDisplayString
+HalEnableSystemInterrupt
+HalFlushCommonBuffer
+HalFlushIoBuffers
+HalFreeCommonBuffer
+HalGetAdapter
+HalGetBusData
+HalGetBusDataByOffset
+HalGetDmaAlignmentRequirement
+HalGetEnvironmentVariable
+HalGetInterruptVector
+HalInitSystem
+HalInitializeProcessor
+HalMakeBeep
+HalProcessorIdle
+HalPxiAdbAutopoll
+HalPxiAdbSetCallback
+HalPxiCommandAdb
+HalQueryDisplayParameters
+HalQueryRealTimeClock
+HalReadDmaCounter
+HalReportResourceUsage
+HalRequestIpi
+HalReturnToFirmware
+HalSetBusData
+HalSetBusDataByOffset
+HalSetDisplayParameters
+HalSetEnvironmentVariable
+HalSetProfileInterval
+HalSetRealTimeClock
+HalSetTimeIncrement
+HalStartNextProcessor
+HalStartProfileInterrupt
+HalStopProfileInterrupt
+HalSweepDcache
+HalSweepDcacheRange
+HalSweepIcache
+HalSweepIcacheRange
+HalTranslateBusAddress
+IoAssignDriveLetters
+IoFlushAdapterBuffers
+IoFreeAdapterChannel
+IoFreeMapRegisters
+IoMapTransfer
+IoReadPartitionTable
+IoSetPartitionInformation
+IoWritePartitionTable
+KdComPortInUse DATA
+KdPortGetByte
+KdPortInitialize
+KdPortPollByte
+KdPortPutByte
+KdPortRestore
+KdPortSave
+KeFlushWriteBuffer
+KeLowerIrql
+KeQueryPerformanceCounter
+KeRaiseIrql
+KeStallExecutionProcessor

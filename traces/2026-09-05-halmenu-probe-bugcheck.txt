@@ -1,0 +1,63 @@
+Checkpoint restored from tmp/nt-after-massstorage.ckpt
+breakpoint hit at $806040D8
+breakpoint hit at $806040D8
+enter: pc=0x806040d8 r3=0xd (expect 0xd)
+breakpoint hit at $00000300
+DSI #1: srr0=0x80139e74 srr1=0x3031 dar=0xc0300c04 dsisr=0x40000000 lr=0x801ad0e8 r1=0x802b8f10 r3=0x8074e6e0 r4=0x0 r5=0xffffffff
+$80139E64  ffff  fnmadd.   f31,f31,f31,f31
+$80139E68  ffff  fnmadd.   f31,f31,f31,f31
+$80139E6C  ffff  fnmadd.   f31,f31,f31,f31
+$80139E70  ffff  fnmadd.   f31,f31,f31,f31
+$80139E74  ffff  fnmadd.   f31,f31,f31,f31
+$80139E78  ffff  fnmadd.   f31,f31,f31,f31
+$80139E7C  ffff  fnmadd.   f31,f31,f31,f31
+$80139E80  ffff  fnmadd.   f31,f31,f31,f31
+true
+breakpoint hit at $800AB08C
+KeBugCheckEx: code=0x1e p1=0x80000002 p2=0x80651df8 p3=0x0 p4=0xffff lr=0x800b05b4 r1=0x802b83f8 msr=0x1b031
+$800B059C  ffff  lwz       r7,24(r30)  
+$800B05A0  ffff  lwz       r6,20(r30)  
+$800B05A4  ffff  lwz       r5,12(r30)  
+$800B05A8  ffff  lwz       r4,0(r30)   
+$800B05AC  ffff  li        r3,30       
+$800B05B0  ffff  bl        $800AB08C   
+$800B05B4  ffff  nop                   
+$800B05B8  ffff  b         $800B086C   
+true
+$002B83F8  aa 81 29 52 80 2b 87 18 aa 81 2e aa 80 08 33 40  ..)R.+........3@
+$002B8408  aa 81 2e 01 aa 81 2e a6 80 2b 88 b0 80 2b 87 78  .........+...+.x
+$002B8418  80 2b 84 60 80 2b 87 70 aa 81 2e 8a aa 81 2e 8e  .+.`.+.p........
+$002B8428  aa 81 2e 82 aa 81 2e 86 aa 81 2e 9a aa 81 2e 9e  ................
+$002B8438  aa 81 2e 92 aa 81 2e 96 aa 81 2e ea aa 81 2e ee  ................
+$002B8448  aa 81 2e e2 aa 81 2e e6 aa 81 2e fa aa 81 2e fe  ................
+$002B8458  aa 81 2e f2 aa 81 2e f6 00 00 00 00 00 00 00 00  ................
+$002B8468  ff ff ff ff ff ff ff ff 00 00 00 00 00 00 00 00  ................
+stack: 
+=== loop end i=2 pc=0x800ab08c lr=0x800b05b4 srr0=0x800a8c44 dar=0xffff ===
+console: [\x9B18;12HMotorola Power Stack (cirrus 54xx)                       \x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Motorola Power Stack (cirrus 54xx))...                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Video Driver)...                                      \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Floppy Disk Driver)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI CD-ROM)...                                       \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI CD-ROM)...                                       \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Disk)...                                         \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Floppy Disk)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Keyboard Driver)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Keyboard Driver)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (FAT File System)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (CD-ROM File System)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H]
+--- HAL base probe: disasm at candidate bases + HalInitSystem rva 0x2c3cc
+$802043CC  ffff  lwz       r26,4(r26)  
+$802043D0  ffff  lis       r10,-16384  
+$802043D4  ffff  lwz       r26,176(r26)
+base 0x801d8000: true
+$802053CC  ffff  stw       r9,0(r11)   
+$802053D0  ffff  stw       r8,4(r11)   
+$802053D4  ffff  lwz       r11,0(r12)  
+base 0x801d9000: true
+$802063CC  ffff  lwz       r10,16(r11) 
+$802063D0  ffff  lwz       r11,20(r11) 
+$802063D4  ffff  ori       r4,r30,0    
+base 0x801da000: true
+$802073CC  ffff  stw       r11,12(r29) 
+$802073D0  ffff  stw       r7,32(r29)  
+$802073D4  ffff  li        r10,40      
+base 0x801db000: true
+$802083CC  ffff  mtlr      r0          
+$802083D0  ffff  lwz       r2,4(r30)   
+$802083D4  ffff  blrl                  
+base 0x801dc000: true
+$8020C3CC  ffff  andi.     r10,r10,65535
+$8020C3D0  ffff  cmplwi    cr1,r10,2   
+$8020C3D4  ffff  lwz       r8,180(r1)  
+base 0x801e0000: true
+=== saved ===

@@ -1,0 +1,17 @@
+Source files in this repository carry
+
+    Copyright (C) 2026 powermac-nt-hal contributors
+
+"powermac-nt-hal contributors" means the people listed below, each holding copyright in
+what they contributed.  The authoritative record is the git history; this file is
+the human-readable index of it.  Add yourself in the same commit as your first
+contribution.
+
+    pappadf <https://github.com/pappadf>            2026-       author, maintainer
+
+Work in this repository has been done with the assistance of Anthropic's Claude,
+directed and reviewed by the contributor credited above; PROVENANCE.md records it
+per row as "pappadf using Claude".
+
+For the projects this work is derived from, and the people behind them, see
+NOTICE.

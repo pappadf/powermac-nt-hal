@@ -1,0 +1,17 @@
+Checkpoint restored from tmp/nt-hal-menu.ckpt
+--- pc=0xff813998 r3=0x0 lr=0xff813998 out=[]
+nokey
+--- pc=0xff808ff0 r3=0xff830440 lr=0xff830440 out=[]
+nokey
+--- pc=0xff80cd90 r3=0xff831174 lr=0xff830678 out=[]
+breakpoint hit at $806040D8
+--- pc=0x806040d8 r3=0x10000 lr=0x80603fb4 out=[]
+nokey
+--- pc=0xff80cdb0 r3=0xff8312d0 lr=0xff830678 out=[\x9B22;16HOther                                            \x9B0m\x9B34m\x9B47m\x9B21;16HPowerized MX, LX, TX (Multiprocessor)            \x9B0m\x9B37m\x9B44m]
+--- pc=0xff80939c r3=0x4f638 lr=0xff809580 out=[\x9B21;16HPowerized MX, LX, TX (Multiprocessor)            \x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HENTER=Select  ESC=Cancel  F3=Exit                                             \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B5;4HSetup could not determine the type of computer you have, or you have\x9B6;4Hchosen to manually specify the computer type.\x9B7;4H\x9B8;4HSelect the computer type from the following list, or select "Other"\x9B9;4Hif you have a device support disk provided by your computer manufacturer.\x9B10;4H\x9B11;14H\xC9\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBB\x9B12;14H\xBA IBM Power Series 6015                             \xBA\x9B13;14H\xBA IBM Power Series 6020,40,42                       \xBA\x9B14;14H\xBA IBM Power Series 6050,6070 and RS/6000 Model 7248 \xBA\x9B15;14H\xBA IBM RS/6000 Model E20/E30/F30                     \xBA\x9B16;14H\xBA IBM RS/6000 Model 45M/H45                         \xBA\x9B17;14H\xBA MOTOROLA PowerStack                               \xBA\x9B18;14H\xBA MOTOROLA PowerStack2                              \xBA\x9B19;14H\xBA MOTOROLA Big Bend                                 \xBA\x9B20;14H\xBA Powerized ES, MX, LX, TX (Uniprocessor)           \xBA\x9B21;14H\xBA Powerized MX, LX, TX (Multiprocessor)             \xBA\x9B22;14H\xBA Other                                             \xBA\x9B23;14H\xC8\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBC\x9B0m\x9B34m\x9B47m\x9B22;16HOther                                            \x9B0m\x9B37m\x9B44m]
+nokey
+--- pc=0xff808fe0 r3=0xff8306d8 lr=0xff830440 out=[]
+nokey
+--- pc=0xff80c3a4 r3=0xff8139e4 lr=0xff8139e8 out=[]
+nokey
+--- pc=0xff8308bc r3=0xff8308a8 lr=0xff8308bc out=[]

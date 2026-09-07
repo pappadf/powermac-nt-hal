@@ -1,0 +1,70 @@
+Checkpoint restored from tmp/nt-pre-go.ckpt
+=== loaded pre-go: pc=0xff808fec msr=0x1b071 ===
+OFClose words before: 0x91430008 0x39200000 (expect 0x91430008 0x39200000)
+OFClose words after:  0x39200000 0x91230008
+$00052248  3940  stw       r31,12(r3)  
+$0005224C  93e3  li        r10,1       
+$00052250  3920  stw       r10,4(r3)   
+$00052254  9143  li        r9,0        
+$00052258  9123  stw       r9,8(r3)    
+$0005225C  9123  stw       r9,16(r3)   
+true
+OF> " /bandit/53c825@11/sd@0,0" encode-string " bootpath" _chosen (property)
+\x1B[1@"\x1B[5C\x1B[1@ \x1B[6C\x1B[1@/\x1B[7C\x1B[1@b\x1B[8C\x1B[1@a\x1B[9C\x1B[1@n\x1B[10C\x1B[1@d\x1B[11C\x1B[1@i\x1B[12C\x1B[1@t\x1B[13C\x1B[1@/\x1B[14C\x1B[1@5\x1B[15C\x1B[1@3\x1B[16C\x1B[1@c\x1B[17C\x1B[1@8\x1B[18C\x1B[1@2\x1B[19C\x1B[1@5\x1B[20C\x1B[1@@\x1B[21C\x1B[1@1\x1B[22C\x1B[1@1\x1B[23C\x1B[1@/\x1B[24C\x1B[1@s\x1B[25C\x1B[1@d\x1B[26C\x1B[1@@\x1B[27C\x1B[1@0\x1B[28C\x1B[1@,\x1B[29C\x1B[1@0\x1B[30C\x1B[1@"\x1B[31C\x1B[1@ \x1B[32C\x1B[1@e\x1B[33C\x1B[1@n\x1B[34C\x1B[1@c\x1B[35C\x1B[1@o\x1B[36C\x1B[1@d\x1B[37C\x1B[1@e\x1B[38C\x1B[1@-\x1B[39C\x1B[1@s\x1B[40C\x1B[1@t\x1B[41C\x1B[1@r\x1B[42C\x1B[1@i\x1B[43C\x1B[1@n\x1B[44C\x1B[1@g\x1B[45C\x1B[1@ \x1B[46C\x1B[1@"\x1B[47C\x1B[1@ \x1B[48C\x1B[1@b\x1B[49C\x1B[1@o\x1B[50C\x1B[1@o\x1B[51C\x1B[1@t\x1B[52C\x1B[1@p\x1B[53C\x1B[1@a\x1B[54C\x1B[1@t\x1B[55C\x1B[1@h\x1B[56C\x1B[1@"\x1B[57C\x1B[1@ \x1B[58C\x1B[1@_\x1B[59C\x1B[1@c\x1B[60C\x1B[1@h\x1B[61C\x1B[1@o\x1B[62C\x1B[1@s\x1B[63C\x1B[1@e\x1B[64C\x1B[1@n\x1B[65C\x1B[1@ \x1B[66C\x1B[1@(\x1B[67C\x1B[1@p\x1B[68C\x1B[1@r\x1B[69C\x1B[1@o\x1B[70C\x1B[1@p\x1B[71C\x1B[1@e\x1B[72C\x1B[1@r\x1B[73C\x1B[1@t\x1B[74C\x1B[1@y\x1B[75C\x1B[1@)\x1B[76C\x1B[76C  ok
+0 > \x1B[4C\x1B[J
+OF> 00 5D0C0 c!
+\x1B[1@0\x1B[5C\x1B[1@0\x1B[6C\x1B[1@ \x1B[7C\x1B[1@5\x1B[8C\x1B[1@D\x1B[9C\x1B[1@0\x1B[10C\x1B[1@C\x1B[11C\x1B[1@0\x1B[12C\x1B[1@ \x1B[13C\x1B[1@c\x1B[14C\x1B[1@!\x1B[15C\x1B[15C  ok
+0 > \x1B[4C\x1B[J
+OF> 00 5E168 c!
+\x1B[1@0\x1B[5C\x1B[1@0\x1B[6C\x1B[1@ \x1B[7C\x1B[1@5\x1B[8C\x1B[1@E\x1B[9C\x1B[1@1\x1B[10C\x1B[1@6\x1B[11C\x1B[1@8\x1B[12C\x1B[1@ \x1B[13C\x1B[1@c\x1B[14C\x1B[1@!\x1B[15C\x1B[15C  ok
+0 > \x1B[4C\x1B[J
+OF> dev /chosen .properties
+\x1B[1@d\x1B[5C\x1B[1@e\x1B[6C\x1B[1@v\x1B[7C\x1B[1@ \x1B[8C\x1B[1@/\x1B[9C\x1B[1@c\x1B[10C\x1B[1@h\x1B[11C\x1B[1@o\x1B[12C\x1B[1@s\x1B[13C\x1B[1@e\x1B[14C\x1B[1@n\x1B[15C\x1B[1@ \x1B[16C\x1B[1@.\x1B[17C\x1B[1@p\x1B[18C\x1B[1@r\x1B[19C\x1B[1@o\x1B[20C\x1B[1@p\x1B[21C\x1B[1@e\x1B[22C\x1B[1@r\x1B[23C\x1B[1@t\x1B[24C\x1B[1@i\x1B[25C\x1B[1@e\x1B[26C\x1B[1@s\x1B[27C\x1B[27C 
+name                    chosen
+stdin                   FF8D6680 
+stdout                  FF8D6500 
+memory                  FF8DC300 
+mmu                     FF8DC380 
+bootpath                2F62616E 6469742F 35336338 32354031 312F7364 40302C30 00
+bootargs                00
+mac-address             1000E088 44CC
+
+ ok
+0 > \x1B[4C\x1B[J
+OF> go
+\x1B[1@g\x1B[5C\x1B[1@o\x1B[6C\x1B[6C Open Firmware ARC Interface  Version 3.0 (Jul 12 1996 - 18:46:28)
+Booting from 'multi(0)scsi(0)cdrom(0)fdisk(0)\\PPC\\SETUPLDR'
+\x9BH\x9BJ
+\x9B4;6H\x9B0m\x9B37m\x9B44m\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B3;1H\x9B2K\x9B2;1H\x9B2K\x9B1;1H\x9B2K\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B3;1H\x9B2K\x9B2;1H\x9B2K\x9B1;1H\x9B2K
+ Windows NT Setup
+\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD
+\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Executive)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HENTER=Select  ESC=Cancel  F3=Exit                                             \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B5;4HSetup could not determine the type of computer you have, or you have\x9B6;4Hchosen to manually specify the computer type.\x9B7;4H\x9B8;4HSelect the computer type from the following list, or select "Other"\x9B9;4Hif you have a device support disk provided by your computer manufacturer.\x9B10;4H\x9B11;14H\xC9\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBB\x9B12;14H\xBA IBM Power Series 6015                             \xBA\x9B13;14H\xBA IBM Power Series 6020,40,42                       \xBA\x9B14;14H\xBA IBM Power Series 6050,6070 and RS/6000 Model 7248 \xBA\x9B15;14H\xBA IBM RS/6000 Model E20/E30/F30                     \xBA\x9B16;14H\xBA IBM RS/6000 Model 45M/H45                         \xBA\x9B17;14H\xBA MOTOROLA PowerStack                               \xBA\x9B18;14H\xBA MOTOROLA PowerStack2                              \xBA\x9B19;14H\xBA MOTOROLA Big Bend                                 \xBA\x9B20;14H\xBA Powerized ES, MX, LX, TX (Uniprocessor)           \xBA\x9B21;14H\xBA Powerized MX, LX, TX (Multiprocessor)             \xBA\x9B22;14H\xBA Other                                             \xBA\x9B23;14H\xC8\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBC\x9B0m\x9B34m\x9B47m\x9B22;16HOther                                            \x9B0m\x9B37m\x9B44m
+=== after go: pc=0xff80b2e4 msr=0x13071 ===
+=== menu reached; OFClose failures so far: see above ===
+breakpoint hit at $806040D8
+key 1: pc=0x806040d8 r3=0x10000
+key 2: pc=0xff809568 r3=0x4f638
+breakpoint hit at $806040D8
+key 3: pc=0x806040d8 r3=0x10000
+key 4: pc=0xff809594 r3=0xff8dfa00
+breakpoint hit at $806040D8
+key 5: pc=0x806040d8 r3=0x10000
+enter: pc=0xff80cd38 r3=0xff83065c
+=== output after Enter (chunks=40, quiet=40) ===
+\x9B17;16HMOTOROLA PowerStack                              \x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (MOTOROLA PowerStack)...                               \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Configuration Data)...                     \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Setup Font)...                                        \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Setup)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Setup)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (PCMCIA Support)...                                    \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Port Driver)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B5;2HSetup could not determine the type of one or more mass storage devices\x9B6;2Hinstalled in your system, or you have chosen to manually specify an adapter.\x9B7;2HCurrently, Setup will load support for the following mass storage devices(s):\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B9;5H<none>\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B11;2H  * To specify additional SCSI adapters, CD-ROM drives, or special\x9B12;2H    disk controllers for use with Windows NT, including those for which\x9B13;2H    you have a device support disk from a mass storage device\x9B14;2H    manufacturer, press S.\x9B15;2H\x9B16;2H  * If you do not have any device support disks from a mass storage\x9B17;2H    device manufacturer, or do not want to specify additional\x9B18;2H    mass storage devices for use with Windows NT, press ENTER.\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HS=Specify Additional Device   ENTER=Continue   F3=Exit                        \x9B0m\x9B37m\x9B44m\x9B6;1H
+=== state: pc=0xff80958c msr=0x13071 lr=0xff809c9c srr0=0x522d4 srr1=0x13071 dar=0x80706004 dsisr=0x42000000 ===
+r1=0xff8df9e0 r2=0xff8df800 r3=0xff8dfa00 r4=0xff809c9c r5=0x1 r13=0xdeadbeef r31=0x4f858
+$FF80958C  ffff  dcbst     0,r1        
+$FF809590  ffff  addi      r1,r1,32    
+$FF809594  ffff  cmplw     cr0,r1,r3   
+$FF809598  ffff  blt       $FF80958C   
+$FF80959C  ffff  blr                   
+$FF8095A0  ffff  lwz       r4,128(r2)  
+$FF8095A4  ffff  lwz       r3,132(r2)  
+$FF8095A8  ffff  rlwinm    r4,r4,26,26,29
+$FF8095AC  ffff  addi      r4,r4,256   
+$FF8095B0  ffff  lwzx      r0,r3,r4    
+$FF8095B4  ffff  mtctr     r0          
+$FF8095B8  ffff  bctr                  
+true
+=== saved ===

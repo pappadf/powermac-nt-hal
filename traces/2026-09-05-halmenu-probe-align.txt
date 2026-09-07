@@ -1,0 +1,53 @@
+Checkpoint restored from tmp/nt-after-massstorage.ckpt
+breakpoint hit at $806040D8
+breakpoint hit at $806040D8
+enter: pc=0x806040d8 r3=0xd (expect 0xd)
+breakpoint hit at $80651DD8
+after map call: r3(mapped base)=0xb0800000 r30=0x8066df38 [r30]=0x0 r28=0x8065cee0 r31=0x8066df64
+breakpoint hit at $80651DF8
+probe #1: lhz addr r11=0xb0802000 r3=0xb0800000 r28=0x8065cee0 [r28]=0x2000 r1=0x802b8a80 lr=0x80651dd8 msr=0x13031
+breakpoint hit at $00000600
+ALIGNMENT: srr0=0x80651df8 srr1=0x3031 dar=0xffff dsisr=0x116b r11=0xffff r3=0xb0800000 r28=0x8065cee0 lr=0x80651dd8 r1=0x802b8a80
+dbat2u=0xb08000fe dbat2l=0x8080003a dbat3u=0xb10000fe dbat3l=0x8000003a dbat1u=0x0 dbat1l=0x0
+=== loop end i=3 pc=0x600 ===
+$80651D60  ffff  fnmadd.   f31,f31,f31,f31
+$80651D64  ffff  fnmadd.   f31,f31,f31,f31
+$80651D68  ffff  fnmadd.   f31,f31,f31,f31
+$80651D6C  ffff  fnmadd.   f31,f31,f31,f31
+$80651D70  ffff  fnmadd.   f31,f31,f31,f31
+$80651D74  ffff  fnmadd.   f31,f31,f31,f31
+$80651D78  ffff  fnmadd.   f31,f31,f31,f31
+$80651D7C  ffff  fnmadd.   f31,f31,f31,f31
+$80651D80  ffff  fnmadd.   f31,f31,f31,f31
+$80651D84  ffff  fnmadd.   f31,f31,f31,f31
+$80651D88  ffff  fnmadd.   f31,f31,f31,f31
+$80651D8C  ffff  fnmadd.   f31,f31,f31,f31
+$80651D90  ffff  fnmadd.   f31,f31,f31,f31
+$80651D94  ffff  fnmadd.   f31,f31,f31,f31
+$80651D98  ffff  fnmadd.   f31,f31,f31,f31
+$80651D9C  ffff  fnmadd.   f31,f31,f31,f31
+$80651DA0  ffff  fnmadd.   f31,f31,f31,f31
+$80651DA4  ffff  fnmadd.   f31,f31,f31,f31
+$80651DA8  ffff  fnmadd.   f31,f31,f31,f31
+$80651DAC  ffff  fnmadd.   f31,f31,f31,f31
+$80651DB0  ffff  fnmadd.   f31,f31,f31,f31
+$80651DB4  ffff  fnmadd.   f31,f31,f31,f31
+$80651DB8  ffff  fnmadd.   f31,f31,f31,f31
+$80651DBC  ffff  fnmadd.   f31,f31,f31,f31
+$80651DC0  ffff  fnmadd.   f31,f31,f31,f31
+$80651DC4  ffff  fnmadd.   f31,f31,f31,f31
+$80651DC8  ffff  fnmadd.   f31,f31,f31,f31
+$80651DCC  ffff  fnmadd.   f31,f31,f31,f31
+$80651DD0  ffff  fnmadd.   f31,f31,f31,f31
+$80651DD4  ffff  fnmadd.   f31,f31,f31,f31
+$80651DD8  ffff  fnmadd.   f31,f31,f31,f31
+$80651DDC  ffff  fnmadd.   f31,f31,f31,f31
+$80651DE0  ffff  fnmadd.   f31,f31,f31,f31
+$80651DE4  ffff  fnmadd.   f31,f31,f31,f31
+$80651DE8  ffff  fnmadd.   f31,f31,f31,f31
+$80651DEC  ffff  fnmadd.   f31,f31,f31,f31
+$80651DF0  ffff  fnmadd.   f31,f31,f31,f31
+$80651DF4  ffff  fnmadd.   f31,f31,f31,f31
+$80651DF8  ffff  fnmadd.   f31,f31,f31,f31
+$80651DFC  ffff  fnmadd.   f31,f31,f31,f31
+true

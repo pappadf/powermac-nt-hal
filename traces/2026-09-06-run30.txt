@@ -1,0 +1,300 @@
+Checkpoint restored from tmp/nt-hal-menu-opfs4.ckpt
+true
+=== delta patched: /tmp/gs-image-ro/8af2c6165487c9fb.delta lba 98069 <- local/powermac-nt-hal/halshinr/build/hal.dll (20480 bytes) ===
+=== iso tmp/nt-hal.iso ===
+=== armed 4 breakpoints ===
+=== files: chunks=20 quiet=20 ===
+\x9B22;16HOther                                            \x9B0m\x9B34m\x9B47m\x9B21;16HPowerized MX, LX, TX (Multiprocessor)            \x9B0m\x9B37m\x9B44m\x9B21;16HPowerized MX, LX, TX (Multiprocessor)            \x9B0m\x9B34m\x9B47m\x9B20;16HPowerized ES, MX, LX, TX (Uniprocessor)          \x9B0m\x9B37m\x9B44m\x9B20;16HPowerized ES, MX, LX, TX (Uniprocessor)          \x9B0m\x9B34m\x9B47m\x9B19;16HMOTOROLA Big Bend                                \x9B0m\x9B37m\x9B44m\x9B19;16HMOTOROLA Big Bend                                \x9B0m\x9B34m\x9B47m\x9B18;16HMOTOROLA PowerStack2                             \x9B0m\x9B37m\x9B44m\x9B18;16HMOTOROLA PowerStack2                             \x9B0m\x9B34m\x9B47m\x9B17;16HMOTOROLA PowerStack                              \x9B0m\x9B37m\x9B44m\x9B17;16HMOTOROLA PowerStack                              \x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (MOTOROLA PowerStack)...                               \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Configuration Data)...                     \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Setup Font)...                                        \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Locale-Specific Data)...                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Setup)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT Setup)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (PCMCIA Support)...                                    \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Port Driver)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B5;2HSetup could not determine the type of one or more mass storage devices\x9B6;2Hinstalled in your system, or you have chosen to manually specify an adapter.\x9B7;2HCurrently, Setup will load support for the following mass storage devices(s):\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B9;5HSymbios Logic C810 PCI SCSI Host Adapter\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B11;2H  * To specify additional SCSI adapters, CD-ROM drives, or special\x9B12;2H    disk controllers for use with Windows NT, including those for which\x9B13;2H    you have a device support disk from a mass storage device\x9B14;2H    manufacturer, press S.\x9B15;2H\x9B16;2H  * If you do not have any device support disks from a mass storage\x9B17;2H    device manufacturer, or do not want to specify additional\x9B18;2H    mass storage devices for use with Windows NT, press ENTER.\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HS=Specify Additional Device   ENTER=Continue   F3=Exit                        \x9B0m\x9B37m\x9B44m\x9B6;1H
+=== video: chunks=20 quiet=20 ===
+\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Symbios Logic C810 PCI SCSI Host Adapter)...          \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (ESDI/IDE Hard Disk)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Windows NT File System (NTFS))...                     \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HENTER=Select  ESC=Cancel  F3=Exit                                             \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B5;3HSetup could not determine the type of video adapter installed in the system.\x9B6;3H\x9B7;3HSelect the video Adapter you want from the following list, or select "Other"\x9B8;3Hif you have a device support disk provided by an adapter manufacturer.\x9B9;3H\x9B11;10H\xC9\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBB\x9B12;10H\xBA E10 Graphics Adapter (S3 864)                             \xBA\x9B13;10H\xBA E10 Graphics Adapter (S3 928)                             \xBA\x9B14;10H\xBA E10 Graphics Adapter (S3 964)                             \xBA\x9B15;10H\xBA S10/S15/H10 Graphics Adapter (Weitek p9100; Frame Buffer) \xBA\x9B16;10H\xBA Standard VGA                                              \xBA\x9B17;10H\xBA G10 Graphics Adapter (Western Digital 90C24A; ThinkPad)   \xBA\x9B18;10H\xBA Motorola Power Stack (cirrus 54xx)                        \xBA\x9B19;10H\xBA FirePower Powerized Graphics Adapter                      \xBA\x9B20;10H\xBA Other                                                     \xBA\x9B21;10H\xC8\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBC\x9B0m\x9B34m\x9B47m\x9B20;12HOther                                                    \x9B0m\x9B37m\x9B44m
+breakpoint hit at $806DED48
+=== BP 0x806ded48 hit #1: r3=0xee519290 r4=0x8075cac0 r5=0xee550f70 r6=0x22 r7=0x0 r8=0x1b031 lr=0x801a5b54 r1=0xe6e84a40 msr=0x1b031 
+$806DED48  ffff  stw       r16,-64(r1) 
+$806DED4C  ffff  mflr      r16         
+$806DED50  ffff  bl        $806E4570   
+$806DED54  ffff  ori       r25,r3,0    
+$806DED58  ffff  ori       r26,r4,0    
+$806DED5C  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $806D64A0
+=== BP 0x806d64a0 hit #2: r3=0xee519290 r4=0x8075cac0 r5=0xe6e849a0 r6=0xe6e849f0 r7=0x806de3d4 r8=0x20 lr=0x806dee68 r1=0xe6e84960 msr=0x1b031 
+$806D64A0  ffff  mflr      r11         
+$806D64A4  ffff  bl        $806D5C5C   
+$806D64A8  ffff  ori       r14,r4,0    
+$806D64AC  ffff  ori       r27,r5,0    
+$806D64B0  ffff  stw       r11,-76(r1) 
+$806D64B4  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #3: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #4: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $806D64A0
+=== BP 0x806d64a0 hit #5: r3=0xee519290 r4=0x8075cac0 r5=0xe6e849a0 r6=0xe6e849f0 r7=0x0 r8=0x1b031 lr=0x806deea8 r1=0xe6e84960 msr=0x1b031 
+$806D64A0  ffff  mflr      r11         
+$806D64A4  ffff  bl        $806D5C5C   
+$806D64A8  ffff  ori       r14,r4,0    
+$806D64AC  ffff  ori       r27,r5,0    
+$806D64B0  ffff  stw       r11,-76(r1) 
+$806D64B4  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #6: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #7: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $806D64A0
+=== BP 0x806d64a0 hit #8: r3=0xee519290 r4=0x8075cac0 r5=0xe6e849a0 r6=0xe6e849f0 r7=0x0 r8=0x1b031 lr=0x806deee8 r1=0xe6e84960 msr=0x1b031 
+$806D64A0  ffff  mflr      r11         
+$806D64A4  ffff  bl        $806D5C5C   
+$806D64A8  ffff  ori       r14,r4,0    
+$806D64AC  ffff  ori       r27,r5,0    
+$806D64B0  ffff  stw       r11,-76(r1) 
+$806D64B4  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #9: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #10: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $806D64A0
+=== BP 0x806d64a0 hit #11: r3=0xee519290 r4=0x8075cac0 r5=0xe6e849a0 r6=0xe6e849f0 r7=0x0 r8=0x1b031 lr=0x806def24 r1=0xe6e84960 msr=0x1b031 
+$806D64A0  ffff  mflr      r11         
+$806D64A4  ffff  bl        $806D5C5C   
+$806D64A8  ffff  ori       r14,r4,0    
+$806D64AC  ffff  ori       r27,r5,0    
+$806D64B0  ffff  stw       r11,-76(r1) 
+$806D64B4  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #12: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #13: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $806D64A0
+=== BP 0x806d64a0 hit #14: r3=0xee519290 r4=0x8075cac0 r5=0xe6e849a0 r6=0xe6e849f0 r7=0x0 r8=0x1b031 lr=0x806def60 r1=0xe6e84960 msr=0x1b031 
+$806D64A0  ffff  mflr      r11         
+$806D64A4  ffff  bl        $806D5C5C   
+$806D64A8  ffff  ori       r14,r4,0    
+$806D64AC  ffff  ori       r27,r5,0    
+$806D64B0  ffff  stw       r11,-76(r1) 
+$806D64B4  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #15: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #16: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $806D64A0
+=== BP 0x806d64a0 hit #17: r3=0xee519290 r4=0x8075cac0 r5=0xe6e849a0 r6=0xe6e849f0 r7=0x0 r8=0x1b031 lr=0x806defa0 r1=0xe6e84960 msr=0x1b031 
+$806D64A0  ffff  mflr      r11         
+$806D64A4  ffff  bl        $806D5C5C   
+$806D64A8  ffff  ori       r14,r4,0    
+$806D64AC  ffff  ori       r27,r5,0    
+$806D64B0  ffff  stw       r11,-76(r1) 
+$806D64B4  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #18: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #19: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $806D64A0
+=== BP 0x806d64a0 hit #20: r3=0xee519290 r4=0x8075cac0 r5=0xe6e849a0 r6=0xe6e849f0 r7=0x0 r8=0x1b031 lr=0x806defe4 r1=0xe6e84960 msr=0x1b031 
+$806D64A0  ffff  mflr      r11         
+$806D64A4  ffff  bl        $806D5C5C   
+$806D64A8  ffff  ori       r14,r4,0    
+$806D64AC  ffff  ori       r27,r5,0    
+$806D64B0  ffff  stw       r11,-76(r1) 
+$806D64B4  ffff  stw       r2,8(r1)    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #21: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+breakpoint hit at $80128CE0
+=== BP 0x80128ce0 hit #22: r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r8=0x0 lr=0x806d8b90 r1=0xe6e84310 msr=0x1b031 
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+true
+=== kernel: chunks=20 quiet=20 ===
+\x9B20;12HOther                                                    \x9B0m\x9B34m\x9B47m\x9B19;12HFirePower Powerized Graphics Adapter                     \x9B0m\x9B37m\x9B44m\x9B19;12HFirePower Powerized Graphics Adapter                     \x9B0m\x9B34m\x9B47m\x9B18;12HMotorola Power Stack (cirrus 54xx)                       \x9B0m\x9B37m\x9B44m\x9B18;12HMotorola Power Stack (cirrus 54xx)                       \x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Motorola Power Stack (cirrus 54xx))...                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Video Driver)...                                      \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Floppy Disk Driver)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI CD-ROM)...                                       \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI CD-ROM)...                                       \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Disk)...                                         \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Floppy Disk)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Keyboard Driver)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Keyboard Driver)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (FAT File System)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (CD-ROM File System)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H
+HAL: halshinr build 17 (HALSHINR-BUILD17-MARKER) for the Apple Network Server (phase 0)
+HAL: I/O base b0000000, PVR 00040103, MSR 00013031, PCR 8000e000, loader block 807f0000
+HAL: GC events 00001000 mask 00100000 levels 00000000
+HAL: boot device multi(0)scsi(0)cdrom(0)fdisk(0)
+HAL: hal path (null), options /NODEBUG
+HAL: 53 memory descriptors, 16384 pages; PCR irql 1, kseg0 top 80800000
+HAL: System/0 key 00000000 'device-tree' cfg 106
+HAL:  Processor/1 key 00000000 'PowerPC(604)' cfg 0
+HAL:   Cache/3 key 01050002 '' cfg 0
+HAL:   Cache/4 key 01050002 '' cfg 0
+HAL:  Memory/37 key 00000000 'memory' cfg 24
+HAL:  Adapter/12 key 00000000 'PCI' cfg 24
+HAL:   Adapter/10 key 00000000 'NCRC810' cfg 40 [v1.2 n=2: port 00000000+00010102 type0]
+HAL:    Controller/15 key 00000000 'SONY    CD-ROM CDU-8002 1.8g' cfg 0
+HAL:    Peripheral/26 key 00000000 '' cfg 0
+HAL:   Adapter/10 key 00000001 'NCRC810' cfg 40 [v1.2 n=2: port 00000000+00010102 type0]
+HAL:    Controller/13 key 00000000 'MINISCRB8425S           1.0' cfg 0
+HAL:    Peripheral/25 key 00000000 '' cfg 0
+HAL:   Adapter/10 key 00000000 'UNKNOWN SCSI' cfg 24
+HAL:   Controller/18 key 00000000 'UNKNOWN NETWORK' cfg 24
+HAL:    Peripheral/36 key 00000000 '' cfg 0
+HAL:   Controller/17 key 00000000 'ch-a' cfg 48 [v1.2 n=2: type0 type0]
+HAL:    Peripheral/35 key 00000000 '' cfg 0
+HAL:   Controller/17 key 00000001 'ch-b' cfg 48 [v1.2 n=2: type0 type0]
+HAL:    Peripheral/35 key 00000001 '' cfg 0
+HAL:   Controller/24 key 00000000 'swim3' cfg 24
+HAL:    Peripheral/34 key 00000000 '' cfg 0
+HAL:   Controller/22 key 00000000 'adb' cfg 0
+HAL:    Peripheral/32 key 00000000 'PCAT_ENHANCED' cfg 0
+HAL:   Controller/21 key 00000000 'adb' cfg 0
+HAL:    Peripheral/31 key 00000000 'PS2 MOUSE' cfg 0
+HAL:   Controller/19 key 00000000 'STB,HORIZON+' cfg 24
+HAL:    Peripheral/29 key 00000000 '1024x768' cfg 0
+HAL:  Cache/7 key 01030007 '' cfg 0
+HAL:  Adapter/12 key 00000001 'PCI' cfg 24
+HAL:  Adapter/12 key 00000002 'pci106b-1' cfg 0
+HAL:  Adapter/12 key 00000003 'pci106b-1' cfg 0
+HAL: GetBusData PCI bus 0 slot 00000011 off 00000000 len 64 -> 64 (00031000)
+HAL: ScsiAdapter 0 (NCRC810) -> mem f3100000 io 00000400 irq 22
+HAL: GetBusData PCI bus 0 slot 00000012 off 00000000 len 64 -> 64 (00031000)
+HAL: ScsiAdapter 1 (NCRC810) -> mem f3103000 io 00000800 irq 26
+HAL: phase 0 done
+Microsoft (R) Windows NT (TM) Version 4.0 (Build 1381).
+HAL: phase 1
+HAL: module ntoskrnl.exe at 8007b000 size 00142000
+HAL: module hal.dll at 80647000 size 00009000
+HAL: module setupdd.sys at 80677000 size 00049000
+HAL: module SPDDLANG.SYS at 8003f000 size 00000d20
+HAL: module pcmcia.sys at 806c0000 size 00010000
+HAL: module SCSIPORT.SYS at 806d0000 size 0000dd20
+HAL: module symc810.sys at 806de000 size 000079e0
+HAL: module atdisk.sys at 806e6000 size 00009800
+HAL: module ntfs.sys at 801bd000 size 00091000
+HAL: module cirrus.sys at 806f0000 size 0000ede0
+HAL: module VIDEOPRT.SYS at 806ff000 size 00007720
+HAL: module floppy.sys at 80707000 size 00007d40
+HAL: module cdrom.sys at 8070f000 size 0000a000
+HAL: module CLASS2.SYS at 80719000 size 00005680
+HAL: module disk.sys at 8071f000 size 00005ec0
+HAL: module sfloppy.sys at 80725000 size 000035e0
+HAL: module i8042prt.sys at 80729000 size 00009700
+HAL: module kbdclass.sys at 80733000 size 00003d20
+HAL: module fastfat.sys at 8024e000 size 0003e000
+HAL: module cdfs.sys at 8028c000 size 0001b000
+1 System Processor [64 MB Memory] MultiProcessor Kernel
+HAL: TranslateBusAddress type 1 bus 0 addr 000003e0 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000003e2 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000003e4 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000240 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000250 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000260 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000270 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000280 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 00000290 space 1
+HAL: TranslateBusAddress type 1 bus 0 addr 000002a0 space 1
+
+=== state: pc=0x80128ce0 msr=0x1b031 lr=0x806d8b90 srr0=0x806d8a38 srr1=0x2b031 dar=0xd3044006 dsisr=0x42000000 ===
+r1=0xe6e84310 r2=0x80083340 r3=0xe6e849a4 r4=0xe6e8465c r5=0x0 r6=0x0 r7=0x0 r11=0x0 r12=0x0 r31=0xe6e84648
+$80128CE0  ffff  stw       r26,-24(r1) 
+$80128CE4  ffff  mflr      r26         
+$80128CE8  ffff  bl        $800EA298   
+$80128CEC  ffff  ori       r11,r10,0   
+$80128CF0  ffff  ori       r10,r3,0    
+$80128CF4  ffff  ori       r27,r4,0    
+$80128CF8  ffff  ori       r28,r5,0    
+$80128CFC  ffff  ori       r29,r6,0    
+$80128D00  ffff  ori       r6,r7,0     
+$80128D04  ffff  ori       r7,r8,0     
+$80128D08  ffff  ori       r8,r9,0     
+$80128D0C  ffff  ori       r9,r11,0    
+true

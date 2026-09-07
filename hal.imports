@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 powermac-nt-hal contributors
+# ntoskrnl.exe routines this HAL calls (verified against the NT 4.0 PowerPC kernel's export table)
+ExAllocatePool
+ExFreePool
+IoBuildSynchronousFsdRequest
+IoCallDriver
+IoCreateSymbolicLink
+IoGetConfigurationInformation
+KdDebuggerEnabled DATA
+KeBugCheck
+KeBugCheckEx
+KeInitializeDpc
+KeInitializeEvent
+KeInitializeSpinLock
+KeInsertQueueDpc
+KePhase0DeleteIoMap
+KePhase0MapIo
+KeSetTimeIncrement
+KeUpdateSystemTime
+KeWaitForSingleObject
+KiDispatchSoftwareInterrupt
+MmAllocateContiguousMemory
+MmFreeContiguousMemory
+MmGetPhysicalAddress
+MmMapIoSpace
+RtlInitUnicodeString
+RtlTimeFieldsToTime
+RtlTimeToTimeFields

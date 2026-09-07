@@ -1,0 +1,143 @@
+powermac-nt-hal — a Windows NT 4.0 HAL for the Apple Network Server
+Copyright (C) 2026 powermac-nt-hal contributors
+Licensed under the GNU General Public License, version 2 only.  See LICENSE.
+
+================================================================================
+WITH THANKS — THE WORK THIS ONE IS BUILT ON
+================================================================================
+
+Two people wrote down the hardest parts before we got here, and published them.
+This HAL would not exist without them.
+
+Nothing was copied from either project — every file here was written fresh — but
+the *shape* of a Windows NT 4.0 PowerPC HAL, and the Cuda/ADB handshake for this
+exact silicon, were learned by reading their source.  That is a derivation, it is
+why this project is GPL-2.0, and recording it properly is the least we owe them.
+
+If you find this project useful, the two below are where the debt belongs.
+
+--------------------------------------------------------------------------------
+1. entii-for-workcubes — the HAL this one learned its shape from
+--------------------------------------------------------------------------------
+
+The contract between the NT kernel and a PowerPC HAL is barely documented: the
+DDK names the functions and says little about the order, the ownership or the
+invariants.  halartx is a HAL that works, and reading it turned months of
+guessing into an afternoon.
+
+    Wack0 (Rairii)          https://github.com/Wack0/entii-for-workcubes
+    License: GPL-2.0        commit c9b041da (2026-02-26), directory halartx/
+
+The facts below came from reading it, and each file that used one says so in its
+own header:
+
+    src/irql.c      the IRQL-to-mask model, and that the HAL owns the IRQL in the PCR
+    src/ints.c      external-interrupt dispatch through PCR->InterruptRoutine, and the
+                    KINTERRUPT-from-dispatch-code trick
+    src/clock.c     the decrementer reload, the KeUpdateSystemTime call, the
+                    KeSetTimeIncrement use
+    src/init.c      the phase 0/1 order and the PRCB version check
+    src/dma.c       which adapter routines may be stubs (hwsup.c)
+    src/misc.c      which ARC and kernel-debugger routines may be stubs
+                    (arccalls.c, kd.c)
+    src/thunk.S     the descriptor-call idea, and the shape of the cache loops (cache.s)
+    src/vga.c       the NT OEM font's layout: the glyph Map[] and its column-major
+    src/display.c   bytes (display.c)
+    include/nt.h    DDK interface layouts, as reproduced in nt4/hal/{arc.h,hal.h,
+                    halppc.h,ppcdef.h} and halartx/source/nthal.h
+
+Also the intended future source of a keyboard/mouse port driver of our own:
+`fpsidrv/`, a complete NT 4.0 PowerPC port driver with source.
+
+--------------------------------------------------------------------------------
+2. maciNTosh and maciNTosh-bandit — the Cuda/ADB handshake, for the same silicon
+--------------------------------------------------------------------------------
+
+Because this code exists, the Cuda protocol was never the unknown here.  Getting a
+keyboard working still took five attempts, and not one of them failed on the
+protocol; every failure was a mistake of our own.
+
+Two projects, and it is worth being exact about who wrote what, because the file
+we read is mostly the parent project's work:
+
+    Wack0 (Rairii)          https://github.com/Wack0/maciNTosh
+    License: GPL-2.0        NT for New World / Old World Power Macintosh
+
+        The author of the Cuda code and of the HAL<->driver contract.
+        inc/halpxi.h is byte-identical between the two projects, and of the 268
+        substantive lines in the pxi.c we read, 208 — 95% — are identical to
+        maciNTosh's own arcgrackle/source/pxi.c.
+
+    MCJack123               https://github.com/MCJack123/maciNTosh-bandit
+    License: GPL-2.0        commit bafef57, a fork of maciNTosh
+
+        The reason any of it applied to a Network Server: the port to
+        Bandit-class machines, which is what moves Cuda to Grand Central
+        + 0x16000 — this machine's address, and the ~5% of the file that made
+        it usable here.  Also the source that identified where ADB code for
+        this chipset existed at all.
+
+    src/cuda.c      the Cuda handshake follows arcbandit/source/pxi.c (and so,
+                    at 95%, maciNTosh's arcgrackle/source/pxi.c): Grand Central's
+                    VIA, TIP/ByteAck/TREQ over the shift register, the attention
+                    byte to discard, TREQ-high meaning last byte.  The three ADB
+                    entry points (HalPxiCommandAdb, HalPxiAdbSetCallback,
+                    HalPxiAdbAutopoll) take their names and prototypes from
+                    inc/halpxi.h — Wack0's file, unchanged in the fork — which is
+                    the private HAL-to-driver contract maciNTosh's keyboard driver
+                    expects.
+
+Both projects' `adb_bus.c` / `adb_kbd.c` in turn carry:
+
+    Open Hack'Ware BIOS ADB bus support, ported to OpenBIOS
+    Copyright (c) 2005 Jocelyn Mayer
+    Copyright (c) 2005 Stefan Reinauer
+    GPL-2.0
+
+which is named here for completeness; this project's `cuda.c` was written from
+`pxi.c` and the hardware documentation, not from those files.  maciNTosh's own
+acknowledgements credit baselibc, The Homebrew Channel, libogc, OpenBIOS,
+coreboot, lib9660 and Petit FatFs for parts of its ARC firmware; this project
+uses none of those components.
+
+--------------------------------------------------------------------------------
+3. Binaries read but never redistributed
+--------------------------------------------------------------------------------
+
+The exact semantics of the three `HalPxi*` entry points were read out of
+maciNTosh's own `halgoss.dll` and `usbadb.sys`, and the field offsets in
+`include/nt.h` out of Microsoft's shipped `NTKRNLMP.EXE`, with `tools/pe-dis.py`.
+
+Those binaries are NOT in this repository and must never be added:
+
+  * maciNTosh's NT binaries (halgoss.dll, usbadb.sys, atapimio.sys, offrmbuf.sys)
+    are GPL-2.0 with no published source.  Running one locally is unrestricted —
+    the GPL governs distribution, not use — but this project could not accompany
+    a copy with the corresponding source or a written offer, so GPL-2.0 section 3
+    cannot be satisfied and redistribution is not something we may do.
+  * Microsoft's binaries, headers and import libraries are proprietary.  Note that
+    entii-for-workcubes vendors Microsoft's NT 4.0 DDK headers under `nt4/`; this
+    project deliberately does not, and reads them only as a reproduction of the
+    documented interface.
+
+--------------------------------------------------------------------------------
+4. Everything else
+--------------------------------------------------------------------------------
+
+The rest — Grand Central interrupt dispatch, Bandit configuration space and bus
+address translation, the Cirrus 54M30 console, the partition table, the ARC
+environment, the ESCC console, the machine-check handler, the build tooling — is
+original work of this project, written from hardware documentation (Apple,
+Motorola, Symbios, Zilog, Cirrus), the observed ARC tree, and behaviour watched
+under a debugger.
+
+Nothing in this repository is derived from leaked Windows NT source code.
+
+The full log, one row per borrowed thing with its origin, licence and extent, is
+PROVENANCE.md.  The rules that keep it that way are CONTRIBUTING.md.
+
+To Wack0 (Rairii) and MCJack123: thank you.  You published work you did not have
+to publish, for machines almost nobody still runs, and it is the reason Windows NT
+now boots on an Apple Network Server.  Wack0's name is on both halves of the debt:
+the HAL this one learned its shape from, and the Cuda code it learned the keyboard
+from.  MCJack123's is on the port that brought the second one within reach.

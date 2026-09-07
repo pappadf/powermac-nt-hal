@@ -1,0 +1,41 @@
+Checkpoint restored from tmp/nt-after-massstorage.ckpt
+breakpoint hit at $806040D8
+key 1: pc=0x806040d8 r3=0x10000 (expect 0x10000)
+\x9B20;12HOther                                                    \x9B0m\x9B34m\x9B47m\x9B19;12HFirePower Powerized Graphics Adapter                     \x9B0m\x9B37m\x9B44m
+key 2: pc=0xff809220 r3=0xff819240 (expect 0x10000)
+\x9B19;12HFirePower Powerized Graphics Adapter                     \x9B0m\x9B34m\x9B47m\x9B18;12HMotorola Power Stack (cirrus 54xx)                       \x9B0m\x9B37m\x9B44m
+breakpoint hit at $806040D8
+enter: pc=0x806040d8 r3=0xd (expect 0xd)
+=== output after Enter (chunks=60, quiet=60) ===
+\x9B18;12HMotorola Power Stack (cirrus 54xx)                       \x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Motorola Power Stack (cirrus 54xx))...                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B4;1H\x9B2K\x9B5;1H\x9B2K\x9B6;1H\x9B2K\x9B7;1H\x9B2K\x9B8;1H\x9B2K\x9B9;1H\x9B2K\x9B10;1H\x9B2K\x9B11;1H\x9B2K\x9B12;1H\x9B2K\x9B13;1H\x9B2K\x9B14;1H\x9B2K\x9B15;1H\x9B2K\x9B16;1H\x9B2K\x9B17;1H\x9B2K\x9B18;1H\x9B2K\x9B19;1H\x9B2K\x9B20;1H\x9B2K\x9B21;1H\x9B2K\x9B22;1H\x9B2K\x9B23;1H\x9B2K\x9B24;1H\x9B2K\x9B25;1H\x9B2K\x9B26;1H\x9B2K\x9B27;1H\x9B2K\x9B28;1H\x9B2K\x9B29;1H\x9B2K\x9B30;1H\x9B2K\x9B31;1H\x9B2K\x9B1;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3H                                                                              \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Video Driver)...                                      \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Floppy Disk Driver)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI CD-ROM)...                                       \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI CD-ROM)...                                       \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Disk)...                                         \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (SCSI Floppy Disk)...                                  \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Keyboard Driver)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (Keyboard Driver)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (FAT File System)...                                   \x9B0m\x9B37m\x9B44m\x9B6;1H\x9B0m\x9B30m\x9B47m\x9B32;1H  \x9B32;3HSetup is loading files (CD-ROM File System)...                                \x9B0m\x9B37m\x9B44m\x9B6;1H
+=== state: pc=0x800dbce4 msr=0x1b031 lr=0x800afebc ctr=0x0 srr0=0x800a8380 srr1=0x13031 dar=0xb8007 dsisr=0x42000000 sdr1=0x10000 ===
+r0=0x1b031 r1=0x802bb078 r2=0x80083340 r3=0x802bb26c r4=0x802bb4d4 r5=0x0 r6=0x8074e0e0 r7=0x14 r8=0x800ab360 r9=0x0 r10=0x802bb4e0 r11=0x23031 r12=0x800a8680 r13=0x0 r30=0x802bb450 r31=0x802bb140
+bat0u=0x800000fe bat0l=0x12 bat1u=0x0 bat1l=0x0 bat2u=0x0 bat2l=0x0 bat3u=0x0 bat3l=0x0 dbat0u=0x800000fe dbat0l=0x12 dbat1u=0x0 dbat1l=0x0 dbat2u=0xb08000fe dbat2l=0x8080003a dbat3u=0xb10000fe dbat3l=0x8000003a
+$800DBCE4  ffff  stw       r6,0(r3)    
+$800DBCE8  ffff  addi      r3,r3,4     
+$800DBCEC  ffff  bne       $800DBCD8   
+$800DBCF0  ffff  cmpwi     cr0,r5,0    
+$800DBCF4  ffff  beqlr                 
+$800DBCF8  ffff  cmpwi     cr0,r5,1    
+$800DBCFC  ffff  lbz       r6,0(r4)    
+$800DBD00  ffff  stb       r6,0(r3)    
+$800DBD04  ffff  beqlr                 
+$800DBD08  ffff  cmpwi     cr0,r5,2    
+$800DBD0C  ffff  lbz       r6,1(r4)    
+$800DBD10  ffff  stb       r6,1(r3)    
+$800DBD14  ffff  beqlr                 
+$800DBD18  ffff  lbz       r6,2(r4)    
+$800DBD1C  ffff  stb       r6,2(r3)    
+$800DBD20  ffff  blr                   
+true
+$800A8380  ffff  mfcr      r5          
+$800A8384  ffff  stw       r6,-10780(0)
+$800A8388  ffff  rlwinm    r6,r4,30,19,19
+$800A838C  ffff  mtcrf     8,r6        
+$800A8390  ffff  lwz       r6,-10828(0)
+$800A8394  ffff  bso       cr4,$800A841C
+$800A8398  ffff  lwz       r11,-10816(0)
+$800A839C  ffff  cmplw     cr1,r1,r6   
+--- at srr0:
+true
+=== saved ===
