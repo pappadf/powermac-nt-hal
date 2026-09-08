@@ -49,6 +49,15 @@ ULONG HalGetBusData(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber
  * driver written to maciNTosh's contract imports from the HAL. */
 VOID HalpCudaInitialize(VOID);
 VOID HalpCudaService(VOID);
+BOOLEAN HalpCudaGetTime(PULONG Seconds);      /* seconds since 1904-01-01, from Cuda */
+BOOLEAN HalpCudaSetTime(ULONG Seconds);
+ULONGLONG HalpDivU64(ULONGLONG n, ULONG d);   /* a freestanding build has no __udivdi3 */
+
+/* The HAL's own partition-table export (source/disk.c); IoAssignDriveLetters uses it to
+ * enumerate each disk rather than assuming one partition per disk. */
+NTSTATUS IoReadPartitionTable(PDEVICE_OBJECT DeviceObject, ULONG SectorSize,
+                              BOOLEAN ReturnRecognizedPartitions,
+                              PDRIVE_LAYOUT_INFORMATION *Layout);
 VOID HalPxiAdbSetCallback(PVOID Callback);
 VOID HalPxiAdbAutopoll(USHORT Mask);
 BOOLEAN HalPxiCommandAdb(UCHAR Command, PUCHAR Data, UCHAR Length, BOOLEAN Poll);

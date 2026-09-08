@@ -19,6 +19,13 @@ register-level detail behind one part of that story.
 | [`2026-09-06-adb-keyboard.md`](2026-09-06-adb-keyboard.md) | The ADB keyboard: Cuda over Grand Central's VIA, the three `HalPxi*` entry points a keyboard driver imports from the HAL, interrupt ownership and DPC delivery — and why "could not load KBDUS.DLL" turned out to be about drive letters |
 | [`2026-09-07-partitions-and-arc-environment.md`](2026-09-07-partitions-and-arc-environment.md) | The partition table and the ARC environment: the three MBR exports NT puts on the HAL side, the undocumented layout convention `IoWritePartitionTable` has to know (four entries per on-disk table, Setup's preference for a logical drive, and `HiddenSectors` arriving zero), why Setup asks the firmware for `SYSTEMPARTITION` rather than looking for one, and the drive-letter bug it all ends on |
 
+## The Setup walk, in screenshots
+
+[`../traces/`](../traces/) carries one screenshot per Setup screen reached, in order:
+`2026-09-06-setup-01-welcome.png` through `2026-09-07-setup-21-copying-win32k.png` — the
+hardware list, the partition table, the format, `\WINNT`, and Windows NT copying itself onto the
+disk.
+
 ## Conventions
 
 Every claim names its source: a thread post id, an Apple document and section, a chip manual, or

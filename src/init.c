@@ -11,8 +11,12 @@
 
 ULONG HalpInitPhase;
 volatile UCHAR *HalpIoBase;
-static ULONG HalpBuild = 28;
-static const char HalpBuildTag[] = "HALSHINR-BUILD28-MARKER";
+/* A version, not a build counter: the counter was maintained by hand, went stale immediately,
+ * and appears in every trace and screenshot.  The marker string is here so a loaded image can
+ * be found by searching memory for it. */
+#define HALSHINR_VERSION "0.1"
+static const char HalpVersion[] = HALSHINR_VERSION;
+static const char HalpBuildTag[] = "HALSHINR-" HALSHINR_VERSION "-MARKER";
 
 VOID HalInitializeProcessor(ULONG Number)
 {
@@ -79,7 +83,7 @@ BOOLEAN HalInitSystem(ULONG Phase, PLOADER_PARAMETER_BLOCK LoaderBlock)
         }
         HalpMapIo();
         HalpInitializeDisplay(LoaderBlock);
-        HalpPrint("\nHAL: halshinr build %d (%s) for the Apple Network Server (phase 0)\n", HalpBuild, HalpBuildTag);
+        HalpPrint("\nHAL: halshinr %s (%s) for the Apple Network Server (phase 0)\n", HalpVersion, HalpBuildTag);
         HalpPrint("HAL: I/O base %x, PVR %x, MSR %x, PCR %x, loader block %x\n",
                   (ULONG)HalpIoBase, HalpReadPvr(), HalpReadMsr(), (ULONG)PCR, (ULONG)LoaderBlock);
         HalpPrint("HAL: GC events %x mask %x levels %x\n", MmioRead32(GC_INT_EVENTS), MmioRead32(GC_INT_MASK), MmioRead32(GC_INT_LEVELS));
