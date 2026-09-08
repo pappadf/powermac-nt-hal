@@ -247,10 +247,19 @@ veneer bytes wall 46 and wall 47 describe, repoints `/chosen bootpath` at the 53
 injects a ten-variable ARC environment at OSLOADER's first `VrGetEnvironmentVariable`, because
 this machine has no ARC NVRAM (ledger rows 11 and 12) and a reboot therefore starts with none.
 
-That script is **not committed yet**: it carries the veneer's shipped instruction words inline,
-and this project does not commit Microsoft code. Turning it into a generator that reads the
-user's own `VENEER.EXE` — the pattern `tools/mkoem.py` already uses for a user's CD image — is
-the first task on resuming, and then it belongs in `tools/`.
+[`tools/mkbootscript.py`](../tools/mkbootscript.py) generates that script and
+[`tools/run-boot.py`](../tools/run-boot.py) runs it. The generator stores no Microsoft code: the
+two ranges it restores are read out of the `VENEER.EXE` you supply, which is the arrangement
+`tools/mkoem.py` already uses for a user's CD image.
+
+```bash
+python3 tools/mkbootscript.py --veneer /path/to/PPC/VENEER.EXE \
+                              --ckpt tmp/nt-pre-go-big2.ckpt --out tmp/boot.gs
+python3 tools/run-boot.py tmp/boot.gs tmp/nt-installed-repaired.img --log tmp/boot.log
+```
+
+Its output was checked against the hand-built script every trace above came from: 407 byte
+pokes and 90 word pokes, identical addresses and values, and identical typed input.
 
 The ARC environment it injects, for the record:
 
