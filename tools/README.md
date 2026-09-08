@@ -17,6 +17,11 @@ links against it. The reference emulator build is noted in [`../docs/CHARTER.md`
 | `mkarcdisk.py` | writes an MBR and an empty FAT16 system partition onto a raw disk image — what an ARC machine's `ARCINST.EXE` would do, which the Network Server's Open Firmware has no equivalent of. Setup will not start without a FAT partition with 750 KB free on the boot disk |
 | `restamp-ckpt.py` | rewrites a checkpoint's 20-byte build ID so a rebuilt emulator will load it. Only when the rebuild changed no checkpointed structure — but then it turns a ten-minute cold boot back into a two-minute iteration |
 | `gen-probe.py` | the phase 0 menu probes (see `docs/2026-09-05-phase0-probes.md`) |
+| `coffsyms.py` | reads a **raw NT PowerPC COFF** image's header, sections and symbol table. `VENEER.EXE` and `OSLOADER.EXE` are not PEs — no MZ stub — and both shipped with their symbol tables intact (1,512 and 2,135 symbols, including every string constant's mangled `??_C@` name). `pe-dis.py` cannot open them; this can. Importable as `Coff` |
+| `coffdis.py` | `pe-dis.py`'s counterpart for those two: disassembles a COFF image, labelling functions and branch targets from the symbol table. How `VrOpen`, `BlOsLoader` and `BlLoadSystemHive` were read (see `docs/2026-09-07-booting-the-installed-disk.md`) |
+| `fatls.py` | lists the FAT16 partitions of an MBR disk image and walks their directories, from the host, with nothing mounted — `mount -o loop` is unavailable in a container and `mtools` is not worth a dependency. How an install is checked after the fact |
+| `fatcat.py` | extracts one file from such an image (this is how `\OS\WINNT40\HAL.DLL` was confirmed byte-identical to `build/hal.dll`) |
+| `fatput.py` | overwrites one file's data in place, same size only. Exists for one job: restoring a hive from its own `.SAV` copy, the way NT's repair option does (wall 48) |
 
 ## The delivery loop (emulator)
 

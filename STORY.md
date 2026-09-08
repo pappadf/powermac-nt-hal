@@ -13,7 +13,9 @@ it; Microsoft's PowerPC NT only ever ran on IBM and Motorola PReP machines. Ever
 inside the Granny Smith emulator, which models this board.
 
 **The goal.** Get NT 4.0's text-mode Setup to run. That needs a HAL — `HAL.DLL` — written from
-scratch, because none of the seven HALs on the CD knows this hardware.
+scratch, because none of the seven HALs on the CD knows this hardware. Setup ran end to end on
+6 September 2026 (Part 11); Part 12 starts the system it installed, which now reaches the kernel
+and stops in a video driver.
 
 **How to read this.** Walls are numbered in the order they bit. Each one gets the symptom as
 the machine reported it, what it actually was, how that was established, the fix, and what the
@@ -1189,6 +1191,132 @@ installed system is the next phase, and it starts there.
 Screens: [`traces/`](traces/), `2026-09-07-setup-20-copying-files.png` through
 `-22-completed-successfully.png`.
 
+## Part 12 — Booting what Setup installed
+
+The eight variables above are in RAM, and the restart loses them. So the first disk boot is a
+rig: a script loads a pre-`go` checkpoint, points `/chosen bootpath` at the 53C825A, and injects
+a ten-variable ARC environment at OSLOADER's first `VrGetEnvironmentVariable`. Everything after
+that is the real thing — the veneer, `OSLOADER.EXE`, the hive, the boot drivers, `NTOSKRNL.EXE`
+and the `HAL.DLL` Setup itself copied.
+
+It reached the kernel. Five walls in between, and **not one of them was in the HAL**: two were
+in the loader, two were workarounds of ours misfiring, and one was the test rig. The full
+account, with the traces, is
+[`docs/2026-09-07-booting-the-installed-disk.md`](docs/2026-09-07-booting-the-installed-disk.md);
+what follows is the short version.
+
+Two things made the day mostly reading rather than guessing. `VENEER.EXE` and `OSLOADER.EXE` are
+both **raw COFF images shipped with their symbol tables intact** — 1,512 and 2,135 symbols,
+including every string constant's mangled `??_C@` name — and OSLOADER carries an
+`RT_MESSAGETABLE` that turns its error numbers into sentences. `tools/coffsyms.py` and
+`tools/coffdis.py` exist for exactly this.
+
+### Wall 45 — the errors arrived as hex, because the errors broke the error messages
+
+`OS Loader V4.00`, then three bare numbers: `0000232e 00002333 00002350`. `%08lx\r\n` is the
+only format string of that shape in the image and it sits with `BlFatalError`'s descriptor — it
+is the fallback for when a message id cannot be resolved. It could not be, because the *first*
+thing that failed was `BlInitResources`, which is what loads the message table. Decoded from the
+table by hand: 9006/9011/9040 *"could not access disk partition tables"*, then 9004/9017/9038
+*"`<winnt root>\system32\ntoskrnl.exe` is missing or corrupt"*.
+
+Both were one failure, and it was the next wall. Wall 45 was never a wall of its own — which is
+worth saying, because two hours went into it.
+
+### Wall 46 — a CD workaround, applied to a disk
+
+**Symptom.** `BlOpen` recognises no filesystem on `partition(1)`. All four recognisers ran, all
+four reads *succeeded*, all four rejected. `IsFatFileStructure` tests `buf[0] == 0xEB || 0xE9`
+first, and sector 0 of this disk is an MBR with zeroed boot code — while both partitions' real
+BPBs pass all nine of its tests.
+
+**What it was.** The veneer had opened the whole disk. Breaking before `OFOpen` and dumping the
+path says it plainly: `sd@0,0@0,0:0` where `:2` was wanted. Open Firmware itself is exact —
+driven by hand at `0 >`, `:1` and `:2` return each partition's BPB and `:0` returns the MBR.
+
+The cause was **wall 22's own workaround**: the `nop` over the branch at veneer image `0x54748`,
+which sends `partition(N)` with no file path down the whole-device route. That is right for the
+CD, where Apple's OF answers `:N` on an ISO with the root directory *as a file*. It is exactly
+wrong for an MBR disk, where `:N` is the only thing that gives NT partition-relative sectors.
+
+**Fixed** by restoring `VrOpen`'s shipped bytes for a disk boot. Both fatal errors went away and
+the message table loaded.
+
+*Worth stating once:* `machine.memory.poke.l A` writes the guest word at `A ^ 4`, because in
+little-endian mode a word at `A` lives at physical `A ^ 4`. The patch wall 22 describes at image
+`0x54748` is therefore written `poke.l 0x5474c`. Both are right; the gap between them wasted an
+hour.
+
+### Wall 47 — the loader's own path, written over the argv table
+
+**Symptom.** *"The `osloader` parameter does not point to a valid file."*
+
+**What it was.** `BlGetArgumentValue` wants an argv entry `osloader=…`. The veneer's `add_argv`
+emits `name=value`, or bare `value` when the name is an empty string — and the trace showed
+`Argv[1]` bare. Slot 0's name string `'OsLoader'` lives at veneer image `0x5cd48`, immediately
+after the boot-file path buffer at `0x5cd30`, which ships holding `\os\winnt\osloader.exe`:
+**22 characters**. Ours is `\OS\WINNT40\OSLOADER.EXE`, 24, and the patch that wrote it also
+NUL-padded eight bytes past the end. It had erased the name.
+
+Two of our own patches, then, in two consecutive walls. Both were found by reading the ledger's
+rows back against a new situation, which is the argument for the ledger existing.
+
+**Fixed** by putting the path in `.text` tail padding and repointing the table's value field,
+leaving `0x5cd30`-`0x5cd4f` as shipped.
+
+### Wall 48 — the hive Setup left behind is only partly written
+
+**Symptom.** *"`\WINNT\SYSTEM32\CONFIG\SYSTEM` is missing or corrupt"* — for a file that is
+there, 192,512 bytes, valid `regf` header, matching sequence numbers, correct header checksum.
+
+**What it was.** `BlLoadSystemHive` opened it, sized it, allocated for it and read all
+`0x2f000` bytes without an error. The rejection is `CmCheckRegistry`'s, and it is right:
+walking the bins from the host finds **3 of the 46** the header's length accounts for.
+Everything past file offset `0x4000` is zeroes. `DEFAULT` is short by one bin; `SYSTEM.SAV`,
+`SOFTWARE` and `SOFTWARE.SAV` are complete.
+
+That is a disk image captured before NT flushed its last writes, and `SYSTEM` is the last file
+text-mode Setup produces. **Worked around, not fixed:** `tools/fatput.py` restores `SYSTEM` and
+`DEFAULT` from their own `.SAV` copies in place — which is what NT's repair option does. The fix
+is a rig change: capture the image after the restart prompt has flushed. Ledger row 15.
+
+### Wall 49 — where it stops *(open)*
+
+```
+HAL: halshinr 0.1 (HALSHINR-0.1-MARKER) for the Apple Network Server (phase 0)
+HAL: boot device multi(0)scsi(1)disk(0)rdisk(0)partition(2)
+HAL: nt boot path \WINNT\, setup block 00000000
+Microsoft (R) Windows NT (TM) Version 4.0 (Build 1381: Service Pack 1).
+HAL: 54M30 console 640x480, font 8x12, 80x40 chars, fb 81000000
+HAL: cuda clock e6c3acd4 -> 2026-9-6 23:50:44
+HAL: module symc810.sys / SCSIPORT.SYS / Disk.sys / CLASS2.SYS / Fastfat.sys
+1 System Processor [64 MB Memory]
+HAL: HalAssignSlotResources bus 0 dev 17 fn 0 -> 4 resources
+  ... 59 x TranslateBusAddress, ports 0x3b0-0x3df and 0x1ce/0x1cf ...
+HAL: HalAssignSlotResources bus 0 dev 15 fn 0 -> 2 resources
+
+*** STOP: 0x00000050 (0xEE315C98,0x00000000,0x00000000,0x00000000)
+PAGE_FAULT_IN_NONPAGED_AREA
+```
+
+`setup block 00000000` is the line that matters: this is not Setup. It is `\WINNT` starting as
+an installed system, on the HAL Setup copied — byte-identical to `build/hal.dll`, checked off the
+disk with `tools/fatcat.py`.
+
+Device 15 is the Cirrus, and this is ledger row 6's neighbourhood: during Setup,
+`VideoPortVerifyAccessRanges` rejected `cirrus.sys`'s claim on the legacy `0xA0000` aperture —
+RAM on this machine — and every video result was measured with that check bypassed. A disk boot
+applies no such poke. But a clean rejection would be `ERROR_INVALID_PARAMETER`, and a page fault
+is not that, so there may be a second bug behind the first. Two things are ruled out: the
+resource list's layout (`pshpack4`, with a `_Static_assert`, and the same code returned four
+resources for the 53C825A without trouble) and the address itself, which is nothing the HAL
+handed back.
+
+Next measurement, one run: break on `KeBugCheckEx`, read `SRR0`/`LR`, name the module from the
+`HAL: module …` list.
+
+![PAGE_FAULT_IN_NONPAGED_AREA, drawn by the HAL's own framebuffer console](traces/2026-09-07-boot-01-bugcheck-0x50.png)
+
 ## The ledger of workarounds
 
 Everything above that is *not* a fix, kept in one place so it is never forgotten:
@@ -1198,7 +1326,7 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 1 | Two `nop`s for the veneer's `claim` failures | patches a Microsoft binary in memory | inherited from the thread; needs a story for real hardware |
 | 2 | `OFClose` nret, two words | same | a veneer replacement, or upstream acceptance |
 | 3 | `partition(1)` and `:0` strings blanked | same | same |
-| 4 | `VrOpen`'s partition branch `nop`ed (wall 22) | same | same |
+| 4 | `VrOpen`'s partition branch `nop`ed (wall 22) | same — and **CD-only**: wall 46 showed it makes an MBR disk boot impossible, because `partition(N)` then opens the whole device | a device-aware patch, or a veneer replacement |
 | 5 | Eleven bytes renaming the veneer's SCSI model (wall 16) | same | a `TXTSETUP` `[Map.SCSI]` addition on an OEM disk would be cleaner |
 | 6 | `VideoPortVerifyAccessRanges` bypass (wall 25) | **defeats a correct conflict check** | a video driver that does not claim the `0xA0000` aperture |
 | 7 | ~~The HAL delivered by overwriting `HALEAGLE.DLL` and selected as *MOTOROLA PowerStack*~~ **retired (wall 44)** | it impersonated another machine's HAL, and broke the moment Setup tried to install it | `tools/mkoem.py`: our own `[Computer]`, `[Hal.Load]` and `[hal]` entries, and `HALSHINR.DLL` by name |
@@ -1209,6 +1337,8 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 12 | The ARC environment does not survive a reboot | it is plain memory in the HAL | the same nvram-backed store |
 | 13 | Both partitions pre-created by `tools/mkarcdisk.py`, so Setup never runs its own partition-creation path (wall 39) | dodges the `setupdd.sys` crash rather than fixing it; a real install must be able to partition a blank disk from inside Setup | the drive-letter fix, after which Setup's own create-and-format path is worth retrying |
 | 14 | The MBR and system partition spliced into the checkpoint's copy-on-write delta at run time (`run-hal.py --disk-delta`) | a test-rig convenience, not a property of the machine: it exists so the disk boots without an MBR and gains one before SETUPLDR reads signatures (wall 36) | a cold-boot chain that starts from an already-partitioned disk, once the veneer's ARC path for it is trusted |
+| 15 | `SYSTEM` and `DEFAULT` restored from their own `.SAV` copies (wall 48) | the hives text-mode Setup wrote are only partly present in the captured image, so this repairs the rig's output rather than the cause | capturing the disk image after Setup's restart prompt has flushed |
+| 16 | The ARC environment injected into the veneer at OSLOADER's first query (wall 45 onward) | a real machine reads it from NVRAM; this writes ten variables into the veneer's own table from outside | the nvram-backed environment store rows 11 and 12 already ask for |
 
 Workarounds 1–5 all live in the veneer and all exist because Microsoft's ARC shim was written for
 a machine whose firmware behaves slightly differently. They are load-time memory pokes, they are
@@ -1235,7 +1365,7 @@ Microsoft tool anywhere in the build:
 And on the emulator side, one committed fidelity improvement: the four Cirrus registers a driver
 identifies the part by.
 
-## Eight things this taught, that generalise
+## Nine things this taught, that generalise
 
 1. **A missing symptom is not evidence.** Wall 20 — "the interrupt never arrives" — was a
    stubbed allocator four layers up. The interrupt path was healthy the entire time.
@@ -1262,3 +1392,9 @@ identifies the part by.
    of existing code — *what happens on the second call?* — and it was sitting directly in front
    of the next thing to be attempted. Every other wall here was found by a machine stopping,
    which on a forty-minute boot costs a great deal more than reading does.
+9. **A workaround is only correct in the situation that produced it, and nothing marks where that
+   situation ends.** Walls 46 and 47 are both patches of ours, written for the CD and for a
+   shorter path, still applied where neither held: one made an MBR disk unbootable, the other
+   erased a string the firmware needed. Both were found by reading the ledger's rows back against
+   a new situation — which is the second, unadvertised reason to keep a ledger. It is not only a
+   confession; it is a checklist for the next context.
