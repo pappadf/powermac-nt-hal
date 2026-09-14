@@ -111,7 +111,22 @@ def main():
                     help='veneer debug bitmask (doc §9): 0x2000 argv, 0x1000 reads, 0x200 opens')
     ap.add_argument('--screenshot', default='tmp/hal/boot-installed.png')
     ap.add_argument('--chunks', type=int, default=900)
+    ap.add_argument('--bp', action='append', default=[], metavar='ADDR[:COND]',
+                    help='diagnostic breakpoint; every hit reports the exception and call '
+                         'registers. COND is a shell expression, e.g. '
+                         '--bp 0x300:"machine.cpu.dar == 0xEE315C98" to stop only on the one '
+                         'data fault that matters. Repeatable.')
+    ap.add_argument('--watch', action='append', default=[], metavar='ADDR',
+                    help='log every 32-bit write to ADDR with the writing PC. Use it to find '
+                         'who corrupts a stack slot (the NT PowerPC saved-TOC slot at 4(r1), '
+                         'say). Repeatable.')
+    ap.add_argument('--bp-space', default='logical', choices=('logical', 'physical'),
+                    help='address space for --bp (the PowerPC exception vectors are physical)')
     a = ap.parse_args()
+    bps = []
+    for spec in a.bp:
+        addr, _, cond = spec.partition(':')
+        bps.append((int(addr, 0), cond))
 
     ven = Coff(a.veneer)
     if ven.base != 0x50000:
@@ -172,7 +187,9 @@ def main():
     s.blob(SCSI_MODEL, SCSI_MODEL_TEXT)
     s('')
 
-    s(f'echo "=== wall 47: the boot file at {a.osloader}, where it cannot overrun ==="')
+    # a .gs double-quoted string takes C escapes, so a Windows path needs its backslashes doubled
+    s('echo "=== wall 47: the boot file at {}, where it cannot overrun ==="'
+      .format(a.osloader.replace('\\', '\\\\')))
     s('# The shipped buffer at 0x5cd30 holds \'\\os\\winnt\\osloader.exe\' -- 22 characters -- and')
     s('# the argv table\'s slot-0 name string \'OsLoader\' sits immediately after it at 0x5cd48.')
     s('# A 24-character path written in place erases that name, create_argv then emits the')
@@ -206,9 +223,19 @@ def main():
         sys.exit(f'the environment ({len(blob)} bytes) runs into the relocated path at '
                  f'{relocated:#x}; shorten it or move one of them')
 
-    s('echo "=== inject an ARC environment at OSLOADER\'s first query, then let it run ==="')
+    def arm_diagnostics(indent=''):
+        for addr, cond in bps:
+            s(f'{indent}debug.breakpoints.add {addr:#x} "{cond}" "{a.bp_space}"')
+
+    for w in a.watch:
+        s(f'debug.log "memory" 1')
+        s(f'debug.logpoints.add addr={int(w, 0):#x} width=l mode=write level=1 '
+          f'message="WATCH {int(w, 0):#x} <- ${{$value}} from pc=${{machine.cpu.pc}} '
+          f'lr=${{machine.cpu.lr}} r1=${{machine.cpu.r1}}"')
+        s('echo "=== inject an ARC environment at OSLOADER\'s first query, then let it run ==="')
     s('debug.breakpoints.clear')
     s(f'debug.breakpoints.add {GETENV_ENTRY:#x}')
+    arm_diagnostics()
     s('machine.scc.a.receive("go")')
     s('scheduler.run 6000000')
     s('machine.scc.a.receive("\\r")')
@@ -228,10 +255,18 @@ def main():
     inner.word(VRENVC, len(ptrs))
     for line in inner.out: s('            ' + line)
     s('            debug.breakpoints.clear')
+    arm_diagnostics('            ')
     s('            echo "--- injected, array[0]=${machine.memory.peek.l(' + f'{VRENVP ^ 4:#x}'
       + ')} VrEnvc=${machine.memory.peek.l(' + f'{VRENVC ^ 4:#x}' + ')} ---"')
     s('        }')
     s('    }')
+    for addr, _ in bps:
+        s(f'    if machine.cpu.pc == {addr:#x} {{')
+        s(f'        echo "BP {addr:#x} srr0=${{machine.cpu.srr0}} srr1=${{machine.cpu.srr1}}'
+          ' dar=${machine.cpu.dar} dsisr=${machine.cpu.dsisr}"')
+        s('        echo "   lr=${machine.cpu.lr} r1=${machine.cpu.r1} r3=${machine.cpu.r3}'
+          ' r4=${machine.cpu.r4} r5=${machine.cpu.r5} r6=${machine.cpu.r6}"')
+        s('    }')
     s('    $out = "${$out}${machine.scc.a.sent()}"')
     if a.screenshot:
         # machine.screen.save fails outright until the HAL has programmed the Cirrus, and a

@@ -1275,12 +1275,18 @@ walking the bins from the host finds **3 of the 46** the header's length account
 Everything past file offset `0x4000` is zeroes. `DEFAULT` is short by one bin; `SYSTEM.SAV`,
 `SOFTWARE` and `SOFTWARE.SAV` are complete.
 
+*Wider than it looked (14 September).* Once wall 49 was fixed and the boot reached driver
+loading, it stopped on `Msfs.SYS` with `STATUS_FILE_CORRUPT_ERROR`. Walking the whole FAT finds
+**49 files whose cluster chain is shorter than their directory entry's size** — `MSFS.SYS` has
+16 KB allocated of 42 KB — clustered alphabetically around `MSFS`/`MUP`/`NDIS`/`NET*`/`NDDE*`,
+which is what a capture taken mid-copy looks like. Same cause, same row, and now the blocker.
+
 That is a disk image captured before NT flushed its last writes, and `SYSTEM` is the last file
 text-mode Setup produces. **Worked around, not fixed:** `tools/fatput.py` restores `SYSTEM` and
 `DEFAULT` from their own `.SAV` copies in place — which is what NT's repair option does. The fix
 is a rig change: capture the image after the restart prompt has flushed. Ledger row 15.
 
-### Wall 49 — where it stops *(open)*
+### Wall 49 — where it stopped
 
 ```
 HAL: halshinr 0.1 (HALSHINR-0.1-MARKER) for the Apple Network Server (phase 0)
@@ -1303,17 +1309,42 @@ PAGE_FAULT_IN_NONPAGED_AREA
 an installed system, on the HAL Setup copied — byte-identical to `build/hal.dll`, checked off the
 disk with `tools/fatcat.py`.
 
-Device 15 is the Cirrus, and this is ledger row 6's neighbourhood: during Setup,
-`VideoPortVerifyAccessRanges` rejected `cirrus.sys`'s claim on the legacy `0xA0000` aperture —
-RAM on this machine — and every video result was measured with that check bypassed. A disk boot
-applies no such poke. But a clean rejection would be `ERROR_INVALID_PARAMETER`, and a page fault
-is not that, so there may be a second bug behind the first. Two things are ruled out: the
-resource list's layout (`pshpack4`, with a `_Static_assert`, and the same code returned four
-resources for the 53C825A without trouble) and the address itself, which is nothing the HAL
-handed back.
+**It was ours.** A conditional breakpoint on the DSI vector — `dar == 0xEE315C98`, so one fault
+out of a boot's thousands — gave `SRR0`, and `SRR0` was the *first* instruction of an NT import
+glue stub: `lwz r11,-32360(r2)`, the TOC load. So `r2` was wrong, not the memory.
 
-Next measurement, one run: break on `KeBugCheckEx`, read `SRR0`/`LR`, name the module from the
-`HAL: module …` list.
+Fingerprinting the caller's argument set-up against all 53 drivers on the disk named the module:
+**`MGA_MIL.SYS`**, the Matrox Millennium miniport, which NT was trying because it tries every
+video miniport in the registry until one claims the adapter. Its TOC should have been
+`0xEE321280`; `r2` held `0xEE31DB04` — a **code address**, and the instruction after the `bl`
+that entered the stub. That same value was still sitting in the caller's frame at `4(r1)`.
+
+`4(r1)` is where NT's import glue saves the caller's TOC. It is also, in the **SVR4** ABI we
+compile for, the caller's **LR save slot** — and our prologues are
+`stwu 1,-48(1) ; stw 0,52(1)`, which is `4(caller's r1)`. Microsoft's put LR in a callee-saved
+register and the TOC at `8(r1)`, never at 4. **Every HAL export that saved LR had been
+destroying its caller's saved TOC since the first boot**, and the caller's `lwz r2,4(r1)`
+afterwards loaded our return address into `r2`.
+
+`thunk.S` already guarded the *other* direction, and its comment names the hazard precisely. The
+fix gives it the missing half: `tools/mkstubs.py` points each export descriptor at a thunk that
+takes a 64-byte frame of its own before calling the C function, and `DEFINE_DESC` does the same
+for the three descriptors the kernel calls directly. Eight instructions per crossing.
+
+One arithmetic discrepancy held it up for an hour and is worth keeping: `r2` derived from `DAR`
+came out four bytes below the value plainly sitting in the slot. `0xEE315C98 ^ 4 = 0xEE315C9C` —
+**the emulator reports `DAR` with the little-endian address munge still applied**, and so does
+the address NT prints on the blue screen. Lesson 6, a second time.
+
+**Bought.** The `0x50` is gone and the installed system completes NT's I/O initialisation: both
+53C825As with adapters, interrupt vectors and real interrupts; `IoReadPartitionTable` over each
+disk; the video device assigned. Full write-up:
+[`docs/2026-09-14-the-toc-slot.md`](docs/2026-09-14-the-toc-slot.md).
+
+Worth re-testing deliberately, without over-claiming it here: that run applied **no**
+`VideoPortVerifyAccessRanges` bypass (ledger row 6) and no video conflict appeared. A video
+driver whose TOC we were corrupting is a plausible cause of wall 25's unexplained
+`ERROR_INVALID_PARAMETER`.
 
 ![PAGE_FAULT_IN_NONPAGED_AREA, drawn by the HAL's own framebuffer console](traces/2026-09-07-boot-01-bugcheck-0x50.png)
 
@@ -1337,7 +1368,7 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 12 | The ARC environment does not survive a reboot | it is plain memory in the HAL | the same nvram-backed store |
 | 13 | Both partitions pre-created by `tools/mkarcdisk.py`, so Setup never runs its own partition-creation path (wall 39) | dodges the `setupdd.sys` crash rather than fixing it; a real install must be able to partition a blank disk from inside Setup | the drive-letter fix, after which Setup's own create-and-format path is worth retrying |
 | 14 | The MBR and system partition spliced into the checkpoint's copy-on-write delta at run time (`run-hal.py --disk-delta`) | a test-rig convenience, not a property of the machine: it exists so the disk boots without an MBR and gains one before SETUPLDR reads signatures (wall 36) | a cold-boot chain that starts from an already-partitioned disk, once the veneer's ARC path for it is trusted |
-| 15 | `SYSTEM` and `DEFAULT` restored from their own `.SAV` copies (wall 48) | the hives text-mode Setup wrote are only partly present in the captured image, so this repairs the rig's output rather than the cause | capturing the disk image after Setup's restart prompt has flushed |
+| 15 | `SYSTEM` and `DEFAULT` restored from their own `.SAV` copies (wall 48) | the captured image is incomplete — **49 files** have a cluster chain shorter than their size, so this repairs two of the rig's casualties rather than the cause | capturing the disk image after Setup's restart prompt has flushed; this is now the blocker |
 | 16 | The ARC environment injected into the veneer at OSLOADER's first query (wall 45 onward) | a real machine reads it from NVRAM; this writes ten variables into the veneer's own table from outside | the nvram-backed environment store rows 11 and 12 already ask for |
 
 Workarounds 1–5 all live in the veneer and all exist because Microsoft's ARC shim was written for
@@ -1365,7 +1396,7 @@ Microsoft tool anywhere in the build:
 And on the emulator side, one committed fidelity improvement: the four Cirrus registers a driver
 identifies the part by.
 
-## Nine things this taught, that generalise
+## Ten things this taught, that generalise
 
 1. **A missing symptom is not evidence.** Wall 20 — "the interrupt never arrives" — was a
    stubbed allocator four layers up. The interrupt path was healthy the entire time.
@@ -1382,8 +1413,9 @@ identifies the part by.
    *after* the instruction executes, so a breakpoint on a faulting load never fires for the
    fault — 18,171 hits on the crashing instruction, every one healthy, and every conclusion drawn
    from the wrong instruction (wall 39). The shell's memory peek does not apply the little-endian
-   address munge either. Calibrate a debugger against a value you already know before you trust
-   what it tells you.
+   address munge either — nor does `DAR`, nor the address NT itself prints on a blue screen, so
+   a `0x50`'s parameter lands four bytes from the address the code asked for (wall 49).
+   Calibrate a debugger against a value you already know before you trust what it tells you.
 7. **A borrowed binary carries its author's assumptions about hardware you both thought you
    shared.** `usbadb.sys` reads ADB `0x3B`–`0x3E` as the arrow keys and `0x7B`–`0x7E` as the
    right-hand modifiers — the older Apple keyboard's convention. Nothing in the header said so;
@@ -1398,3 +1430,8 @@ identifies the part by.
    erased a string the firmware needed. Both were found by reading the ledger's rows back against
    a new situation — which is the second, unadvertised reason to keep a ledger. It is not only a
    confession; it is a checklist for the next context.
+10. **When two ABIs meet, write down which one owns each byte of the frame — then guard the seam
+   in both directions.** `thunk.S` had the hazard exactly right in its comment and solved it for
+   calls *into* the kernel; nobody asked the same question about calls *out of* it, and the HAL
+   spent five days corrupting a word of every caller's stack (wall 49). A comment that states an
+   invariant is an invitation to check every place it applies.
