@@ -66,6 +66,85 @@ def arc_environment(sys_part, os_part, osloader, winnt, options, identifier):
     ]
 
 
+# The ADB virtual key codes, as the emulator's debug_mac_resolve_ascii numbers them (Inside
+# Macintosh: Toolbox Essentials, "Virtual Key Codes").  We need the codes, not the characters,
+# because keyboard.down()/up() resolve only named keys and hex keycodes -- and down()/up() is the
+# only form that lets a keystroke be spread over guest time.
+ADB_CODE = {
+    'a': 0x00, 'b': 0x0B, 'c': 0x08, 'd': 0x02, 'e': 0x0E, 'f': 0x03, 'g': 0x05, 'h': 0x04,
+    'i': 0x22, 'j': 0x26, 'k': 0x28, 'l': 0x25, 'm': 0x2E, 'n': 0x2D, 'o': 0x1F, 'p': 0x23,
+    'q': 0x0C, 'r': 0x0F, 's': 0x01, 't': 0x11, 'u': 0x20, 'v': 0x09, 'w': 0x0D, 'x': 0x07,
+    'y': 0x10, 'z': 0x06,
+    '0': 0x1D, '1': 0x12, '2': 0x13, '3': 0x14, '4': 0x15, '5': 0x17, '6': 0x16, '7': 0x1A,
+    '8': 0x1C, '9': 0x19,
+    ' ': 0x31, '`': 0x32, '-': 0x1B, '=': 0x18, '[': 0x21, ']': 0x1E, '\\': 0x2A, ';': 0x29,
+    "'": 0x27, ',': 0x2B, '.': 0x2F, '/': 0x2C, '\n': 0x24, '\r': 0x24, '\t': 0x30,
+}
+SHIFTED = {'!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8',
+           '(': '9', ')': '0', '~': '`', '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\',
+           ':': ';', '"': "'", '<': ',', '>': '.', '?': '/'}
+ADB_SHIFT = 0x38
+
+# Long enough that each transition lands in its own auto-poll.  **This is the whole point.**
+# `keyboard.type()` paces its events 4 ms apart while Cuda auto-polls every 11 ms, so a
+# character's press and release arrive in one ADB Register 0 packet -- two key events in two
+# bytes -- and only the first of them is acted on.  That silently ate the second letter of every
+# doubled pair ("Granny" -> "Grany"), swallowed roughly half of a run of digits, and left a
+# shift stuck down often enough that a digits-only field rejected everything that followed.
+# Spreading the transitions over guest time gives each one a packet of its own.
+ADB_GAP = 3000000
+
+
+def adb_char_statements(ch):
+    """down / wait / up for one character, with shift held around it when the key needs it."""
+    shift = ch.isupper() or ch in SHIFTED
+    base = ch.lower() if ch.isupper() else SHIFTED.get(ch, ch)
+    code = ADB_CODE.get(base)
+    if code is None:
+        sys.exit(f'--adb-then: no ADB key code for {ch!r}')
+    out = []
+    if shift:
+        out += [f'let kS = try(machine.adb.keyboard.down("{ADB_SHIFT:#04x}"), false)',
+                f'scheduler.run {ADB_GAP}']
+    out += [f'let kd = try(machine.adb.keyboard.down("{code:#04x}"), false)',
+            f'scheduler.run {ADB_GAP}',
+            f'let ku = try(machine.adb.keyboard.up("{code:#04x}"), false)',
+            f'scheduler.run {ADB_GAP}']
+    if shift:
+        out += [f'let kE = try(machine.adb.keyboard.up("{ADB_SHIFT:#04x}"), false)',
+                f'scheduler.run {ADB_GAP}']
+    return out
+
+
+def adb_statements(key):
+    """The .gs lines that send one --adb-then key.
+
+    Every call is wrapped in `try(...)`: a script statement that errors aborts the whole run, and
+    there is no point losing a twenty-minute boot because one keystroke arrived while the ADB
+    queue was full."""
+    if key.startswith('#'):
+        # NOT press(): it calls system_input_key down-then-up with no guest time in between, so
+        # both transitions land in a single ADB Register 0 packet and NT sees no keystroke at
+        # all.  Separate them the way type() paces its own, which is what makes them arrive as
+        # two polls.  run-hal.py carries the same note -- this cost a run to rediscover.
+        return [f'let kd = try(machine.adb.keyboard.down("{key[1:]}"), false)',
+                'scheduler.run 3000000',
+                f'let ku = try(machine.adb.keyboard.up("{key[1:]}"), false)',
+                'echo "    -> ${$kd}/${$ku}"']
+    if key.startswith('+'):
+        call, fallback = f'machine.adb.keyboard.down("{key[1:]}")', 'false'
+    elif key.startswith('-'):
+        call, fallback = f'machine.adb.keyboard.up("{key[1:]}")', 'false'
+    else:
+        out = []
+        for ch in key:
+            out += adb_char_statements(ch)
+        return out
+    # Report what the call returned.  "the key went in and nothing happened" and "the call never
+    # happened" look identical from a screenshot, and they have nothing in common as bugs.
+    return [f'let kr = try({call}, {fallback})', 'echo "    -> ${$kr}"']
+
+
 class Script:
     """Accumulates .gs lines, and knows the two little-endian address munges.
 
@@ -111,6 +190,36 @@ def main():
                     help='veneer debug bitmask (doc §9): 0x2000 argv, 0x1000 reads, 0x200 opens')
     ap.add_argument('--screenshot', default='tmp/hal/boot-installed.png')
     ap.add_argument('--chunks', type=int, default=900)
+    ap.add_argument('--adb-then', action='append', default=[], metavar='KEY',
+                    help='drive the GUI Setup wizard from the ADB keyboard. Each key waits until '
+                         'the screen has been unchanged for --settle chunks, so Setup is asked '
+                         'for the next page only once it has finished drawing this one. '
+                         '"#NAME" taps a key ("#return", "#tab", "#down", "#0x24"), "+NAME" '
+                         'holds one down and "-NAME" releases it (for Alt-accelerators); '
+                         'anything else is typed as text, where \\n is Return and \\t is Tab. '
+                         'Repeatable, sent in order.')
+    ap.add_argument('--save', default='', metavar='CKPT',
+                    help='checkpoint the machine once the --adb-then list is exhausted and the '
+                         'screen has settled. Replaying the GUI wizard from the pre-go checkpoint '
+                         'costs twenty minutes; saving at the page you are stuck on turns the '
+                         'next experiment into seconds. Load it with --resume.')
+    ap.add_argument('--resume', default='', metavar='CKPT',
+                    help='start from a checkpoint saved by --save instead of booting: skips the '
+                         'veneer patching, the ARC environment and the whole boot, and goes '
+                         'straight to sending keys.')
+    ap.add_argument('--keys-after', type=int, default=0, metavar='N',
+                    help='hold the --adb-then sequence until chunk N. The HAL console is already '
+                         'on the Cirrus long before the GUI wizard is, and a quiet stretch during '
+                         'driver load looks exactly like a page waiting for input -- this is the '
+                         'floor that keeps the first key out of the boot.')
+    ap.add_argument('--settle', type=int, default=10, metavar='N',
+                    help='chunks the screen must hold still before the next --adb-then key. '
+                         'A wizard page that is still painting, or a file copy with a moving '
+                         'progress bar, never settles -- which is exactly the interlock wanted.')
+    ap.add_argument('--log', action='append', default=[], metavar='CAT=LEVEL',
+                    help='turn on an emulator log category for the run, e.g. --log adb=2 to see '
+                         'every key transition the keyboard queues and every packet autopoll '
+                         'hands over. Repeatable.')
     ap.add_argument('--bp', action='append', default=[], metavar='ADDR[:COND]',
                     help='diagnostic breakpoint; every hit reports the exception and call '
                          'registers. COND is a shell expression, e.g. '
@@ -157,6 +266,7 @@ def main():
     s('    $out = "${$out}${machine.scc.a.sent()}"')
     s('    return $out')
     s('}')
+    boot_start = len(s.out)                 # everything from here to the loop is the boot
     s(f'checkpoint.load "{a.ckpt}"')
     s('echo "=== loaded pre-go: pc=${machine.cpu.pc} msr=${machine.cpu.msr} ==="')
     s('let junk = machine.scc.a.sent()')
@@ -233,15 +343,31 @@ def main():
           f'message="WATCH {int(w, 0):#x} <- ${{$value}} from pc=${{machine.cpu.pc}} '
           f'lr=${{machine.cpu.lr}} r1=${{machine.cpu.r1}}"')
         s('echo "=== inject an ARC environment at OSLOADER\'s first query, then let it run ==="')
+    for spec in a.log:
+        cat, _, lvl = spec.partition('=')
+        s(f'debug.log "{cat}" {int(lvl or 1)}')
     s('debug.breakpoints.clear')
     s(f'debug.breakpoints.add {GETENV_ENTRY:#x}')
     arm_diagnostics()
     s('machine.scc.a.receive("go")')
     s('scheduler.run 6000000')
     s('machine.scc.a.receive("\\r")')
+    if a.resume:
+        # Replace the entire boot -- veneer patches, ARC environment, `go` -- with one load of a
+        # checkpoint taken mid-wizard.  Nothing before the loop is reproducible state we need:
+        # it is all in the checkpoint.
+        s.out[boot_start:] = [f'checkpoint.load "{a.resume}"',
+                              f'echo "=== resumed {a.resume} ==="',
+                              'let junk = machine.scc.a.sent()']
     s('let out = ""')
     s('let i = 0')
-    s('let done = 0')
+    s(f'let done = {1 if a.resume else 0}')
+    s('let sum = 0')                 # this chunk's screen checksum
+    s('let seen = 0')                #   ... the last distinct one, and the one before it
+    s('let seen2 = 0')
+    s('let still = 0')               # chunks the screen has held those checksums
+    s('let shot = 0')                # chunk of the last screenshot, to throttle a busy repaint
+    s('let ki = 0')                  # how many --adb-then keys have gone in
     s(f'while $i < {a.chunks} {{')
     s('    scheduler.run 20000000')
     s(f'    if machine.cpu.pc == {GETENV_ENTRY:#x} {{')
@@ -271,16 +397,59 @@ def main():
     if a.screenshot:
         # machine.screen.save fails outright until the HAL has programmed the Cirrus, and a
         # failed statement aborts the script -- so gate every grab on the HAL saying it is up.
-        s('    if contains($out, "54M30 console") && ($i % 20) == 0 {')
-        s(f'        machine.screen.save "{a.screenshot[:-4]}-p${{$i}}.png"')
+        #
+        # Grab on *change*, not on a fixed stride: a wizard page is a still image that can sit
+        # there for a thousand chunks, and the interesting frames are the transitions.  The same
+        # checksum drives the keyboard below -- "the screen stopped moving" is the only signal
+        # this rig has that Setup is waiting for a human.
+        s('    if %s {' % ('true' if a.resume else 'contains($out, "54M30 console")'))
+        # The visible region, NOT the whole framebuffer: screen.checksum() with no arguments
+        # hashes stride*height, and the stride padding is off-screen video memory that NT's
+        # display driver uses as scratch.  It churns while the picture is perfectly still, so
+        # the no-argument form reports "changed" forever and the interlock below never fires.
+        s('        $sum = try(machine.screen.checksum(0, 0, machine.screen.height, '
+          'machine.screen.width), $sum)')
+        # Two checksums count as "still", not one: a focused edit control blinks its caret, and
+        # a screen alternating between exactly two pictures is a page waiting for input just as
+        # much as a frozen one.  A progress bar walks through many distinct values and so still
+        # reads as moving, which is what keeps a key out of a file copy.
+        s('        if $sum == $seen || $sum == $seen2 {')
+        s('            $still = $still + 1')
+        s('        } else {')
+        s('            $seen2 = $seen')
+        s('            $seen = $sum')
+        s('            $still = 0')
+        s('            if $i - $shot >= 3 {')
+        s('                $shot = $i')
+        s(f'                machine.screen.save "{a.screenshot[:-4]}-c${{$i}}.png"')
+        s('                echo "=== screen ${$sum} at chunk ${$i} ==="')
+        s('            }')
+        s('        }')
+        if a.adb_then:
+            s(f'        if $still == {a.settle} && $i > {a.keys_after} {{')
+            for k, key in enumerate(a.adb_then):
+                s(f'            if $ki == {k} {{')
+                s(f'                echo "--- key {k}: {key} ---"')
+                for line in adb_statements(key):
+                    s(f'                {line}')
+                s('            }')
+            s('            $ki = $ki + 1')
+            s('            $still = 0')
+            s('        }')
+            # Once the last key has gone in and the screen has stayed still for a long while,
+            # there is nothing left to wait for: stop rather than burn the rest of the budget.
+            s(f'        if $ki >= {len(a.adb_then)} && $still > {8 * a.settle} {{ break }}')
         s('    }')
     s('    if contains($out, "please reboot") { break }')
     s('    if contains($out, "0 > ") { break }')
     s('    if contains($out, "*** STOP") { break }')
     s('    $i = $i + 1')
     s('}')
+    if a.save:
+        s(f'checkpoint.save "{a.save}"')
+        s(f'echo "=== saved {a.save} ==="')
     if a.screenshot:
-        s('if contains($out, "54M30 console") {')
+        s('if %s {' % ('true' if a.resume else 'contains($out, "54M30 console")'))
         s(f'machine.screen.save "{a.screenshot}"')
         s(f'echo "=== screenshot {a.screenshot} checksum ${{machine.screen.checksum()}} ==="')
         s('}')

@@ -82,7 +82,14 @@ static BOOLEAN HalpCudaBusy;         /* a transaction is in progress; keeps the 
  * (maciNTosh's own HAL says the same thing by lowering to IRQL 2 before it calls the callback.)
  * So the interrupt only parks the packet in this ring and queues a DPC; the callback runs from
  * the DPC at DISPATCH_LEVEL.  One producer at device IRQL, one consumer at 2. */
-#define ADB_RING 8
+/* Eight was enough for a keystroke at a time and nothing else.  Typing is a *burst*: one
+ * `keyboard.type("Granny Smith")` puts 12 characters on the bus in about 50 ms, which Cuda
+ * auto-polls out as eighteen two-event packets — and every one of them lands on the VIA
+ * interrupt before the DPC that drains them has had a chance to run once.  The ring overflowed
+ * after seven, the rest were dropped on the floor, and NT received half a word.  Size it for a
+ * burst instead: 64 entries is 1.6 KB of BSS and covers far more than a fast typist can queue
+ * between two DPCs. */
+#define ADB_RING 64
 static struct { UCHAR Data[CUDA_MAX_REPLY]; UCHAR Length; } HalpAdbRing[ADB_RING];
 /* Single producer (the VIA interrupt, at the device IRQL) and single consumer (the DPC, at
  * DISPATCH_LEVEL), which on this uniprocessor machine is safe without a lock: the consumer
@@ -227,6 +234,8 @@ static ULONG HalpCudaRequest(UCHAR type, const UCHAR *in, ULONG inlen, PUCHAR re
 
 /* maciNTosh's HAL hands the callback the reply from its flags byte on; do the same. */
 static ULONG HalpAdbTrace;
+static ULONG HalpAdbDropped;         /* packets the ring had no room for */
+static ULONG HalpAdbDelivered;       /* packets handed to the driver, for the periodic trace */
 
 static VOID HalpAdbDeliver(PUCHAR packet, ULONG length)
 {
@@ -237,6 +246,10 @@ static VOID HalpAdbDeliver(PUCHAR packet, ULONG length)
                   length > 2 ? packet[2] : 0, length > 3 ? packet[3] : 0);
     }
     if (length <= 1 || !HalpAdbCallback) return;
+    /* A count every so often, so "did delivery stop?" is answerable without rebuilding: the
+     * fixed trace window above goes quiet after twenty packets whether the bus died or not. */
+    if ((++HalpAdbDelivered % 16) == 0)
+        HalpPrint("HAL: adb delivered %d packets (%d dropped)\n", HalpAdbDelivered, HalpAdbDropped);
     HalpCallDesc4(HalpAdbCallback, packet[0], packet[1], (ULONG)(packet + 2), length - 2);
 }
 
@@ -245,18 +258,40 @@ static VOID HalpAdbDeliver(PUCHAR packet, ULONG length)
 VOID HalpCudaService(VOID)
 {
     UCHAR reply[CUDA_MAX_REPLY];
+    BOOLEAN queued = FALSE;
+
     if (!HalpCudaReady || HalpCudaBusy) return;
-    if (!HalpCudaByteReady()) return;
-    HalpCudaBusy = TRUE;
-    ULONG n = HalpCudaReadPacket(reply, sizeof(reply));
-    HalpCudaBusy = FALSE;
-    if (n < 3 || reply[0] != CUDA_PKT_ADB) return;    /* a tick or a command reply: not ours */
-    ULONG next = (HalpAdbRingTail + 1) % ADB_RING;
-    if (next == HalpAdbRingHead) return;              /* the driver is not keeping up; drop it */
-    for (ULONG i = 0; i + 1 < n && i < CUDA_MAX_REPLY; i++) HalpAdbRing[HalpAdbRingTail].Data[i] = reply[1 + i];
-    HalpAdbRing[HalpAdbRingTail].Length = (UCHAR)(n - 1);
-    HalpAdbRingTail = next;
-    if (HalpAdbDpcReady) KeInsertQueueDpc(&HalpAdbDpc, NULL, NULL);
+
+    /* **Drain, do not read one.**  HalpInterrupt clears Grand Central's latch for this source
+     * *before* calling us (ints.c), so a packet Cuda raises while we are still in here produces
+     * no second interrupt -- it is simply lost, and with it every packet after it, because the
+     * only thing that would have fetched them was that interrupt.  One keystroke at a time hid
+     * this completely: the wedge needs a second packet to arrive inside the handler's window,
+     * which is what typing does.  The symptom was a keyboard that died mid-word and never came
+     * back, and it cost three runs to stop blaming the ring above.
+     *
+     * Bounded, like every other wait in this file: a Cuda that answers forever must not be able
+     * to hold the machine at device IRQL. */
+    for (ULONG guard = 0; guard < ADB_RING && HalpCudaByteReady(); guard++) {
+        HalpCudaBusy = TRUE;
+        ULONG n = HalpCudaReadPacket(reply, sizeof(reply));
+        HalpCudaBusy = FALSE;
+        if (n < 3 || reply[0] != CUDA_PKT_ADB) continue;   /* a tick or a command reply: not ours */
+        ULONG next = (HalpAdbRingTail + 1) % ADB_RING;
+        if (next == HalpAdbRingHead) {                /* the driver is not keeping up; drop it */
+            /* Say so.  A dropped ADB packet is a keystroke the user typed and NT never saw, and
+             * in silence it looks like a stuck keyboard rather than a full queue -- which is
+             * exactly how it was read the first time. */
+            if (++HalpAdbDropped == 1 || (HalpAdbDropped % 32) == 0)
+                HalpPrint("HAL: adb ring full, dropped %d packet(s)\n", HalpAdbDropped);
+            continue;
+        }
+        for (ULONG i = 0; i + 1 < n && i < CUDA_MAX_REPLY; i++) HalpAdbRing[HalpAdbRingTail].Data[i] = reply[1 + i];
+        HalpAdbRing[HalpAdbRingTail].Length = (UCHAR)(n - 1);
+        HalpAdbRingTail = next;
+        queued = TRUE;
+    }
+    if (queued && HalpAdbDpcReady) KeInsertQueueDpc(&HalpAdbDpc, NULL, NULL);
 }
 
 /* DISPATCH_LEVEL: hand the parked packets to the driver. */
