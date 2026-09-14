@@ -44,6 +44,13 @@ WORD_PATCHES = [
 # file*, so the CD needs VrOpen's whole-device route -- and an MBR disk needs the shipped branch,
 # because ':N' is the only thing that gives NT partition-relative sectors.
 VROPEN = (0x54748, 0x4086003C, NOP, 4, "VrOpen: take the raw/whole-device route (CD only)")
+# The veneer ships aimed at an installed system -- its boot-file buffer holds
+# '\\os\\winnt\\osloader.exe'.  Booting the CD means aiming it at SETUPLDR instead, and one
+# instruction at 0x53db0 that has to stop deriving a path from what was there.  Both are CD-only
+# for the same reason row 4 is: a disk boot wants the shipped behaviour back (wall 47).
+SETUPLDR_PATH = (0x5CD30, b'\\os\\winnt\\osloader.exe', b'\\PPC\\SETUPLDR' + b'\0' * 10, 4,
+                 "the boot file the veneer opens on the CD")
+SETUPLDR_INSN = (0x53DB0, 0x554AA016, 0x39400000, 4, "li r10,0 in the path derivation")
 
 BYTE_PATCHES = [
     (0x5D0C0, ord('p'), 0, 3, "blank the 'partition(1)' the veneer appends to every ARC path"),
@@ -70,7 +77,7 @@ def main():
         sys.exit(f'{a.veneer}: image base {ven.base:#x}, expected 0x50000 — not this veneer?')
     d = bytearray(ven.d)
 
-    patches = list(WORD_PATCHES) + ([VROPEN] if a.target == 'cd' else [])
+    patches = list(WORD_PATCHES) + ([VROPEN, SETUPLDR_INSN] if a.target == 'cd' else [])
     print(f'{a.veneer}: {len(d)} bytes, base {ven.base:#x}, target {a.target}')
     for va, want, new, row, why in patches:
         off = ven.va2off(va)
@@ -89,6 +96,14 @@ def main():
             sys.exit(f'{va:#x} holds {d[off]:#04x}, expected {want:#04x} — refusing to patch')
         d[off] = new
         print(f'  row {row}  VA {va:#07x}  {want:#04x} -> {new:#04x}         {why}')
+
+    if a.target == 'cd':
+        va, want, new, row, why = SETUPLDR_PATH
+        off = ven.va2off(va)
+        if bytes(d[off:off + len(want)]) != want:
+            sys.exit(f'{va:#x} holds {bytes(d[off:off+len(want)])!r}, expected {want!r} — refusing')
+        d[off:off + len(new)] = new
+        print(f'  row {row}  VA {va:#07x}  {want!r} -> {new!r}   {why}')
 
     va, want, new, row, why = SCSI_MODEL
     off = ven.va2off(va)
