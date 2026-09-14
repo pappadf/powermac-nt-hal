@@ -1348,6 +1348,104 @@ driver whose TOC we were corrupting is a plausible cause of wall 25's unexplaine
 
 ![PAGE_FAULT_IN_NONPAGED_AREA, drawn by the HAL's own framebuffer console](traces/2026-09-07-boot-01-bugcheck-0x50.png)
 
+## Part 13 — Graphics
+
+### Wall 50 — one file's data inside the file allocation table
+
+**Symptom.** Every fresh install was quietly damaged. NT booted and then stopped on
+`Msfs.SYS` with `STATUS_FILE_CORRUPT_ERROR`; walking the FAT from the host found **70 to 98
+files whose cluster chain was shorter than the size in their directory entry**, always in a
+band around `M`/`N` — `MSFS`, `MUP`, `NDIS`, `NET*`, `NDDE*`.
+
+**Two wrong diagnoses first**, both worth recording because each looked convincing.
+
+*The capture.* The obvious reading was that the disk image had been snapshotted before NT
+flushed, and the cure was to press Enter at the restart prompt and capture later. It was not:
+driving the restart to `Restarting computer…` and capturing after the shutdown changed nothing.
+
+*The cache.* The next reading was coherency — a dirty FAT sector still in the 604's write-back
+cache while the bus-master 53C825A DMAed the stale copy out. `HalFlushIoBuffers` did bail out
+for everything except a paging read, so the theory fitted the code. Sweeping the range with
+`dcbf` in both directions changed nothing either: Bandit is coherent with the 604, exactly as
+`dma.c`'s own header had said all along. The change was reverted.
+
+**What it actually was.** The corrupted FAT entries decoded as *PowerPC machine code*, and
+searching the image found the same block in three places: both FAT copies, and its legitimate
+home in a data cluster belonging to `\WINNT\SYSTEM32\NOTEPAD.EXE` (`MSNCDET.DLL` on the next
+run). A file's data was landing on top of NT's cached FAT page, and NT was dutifully writing
+that page back to both copies of the FAT.
+
+Reading the code had not found it, so the emulator was made to say it instead: `scripts53c8xx.c`
+now logs the host address and byte count of **every** bus-master transfer, and `run-hal.py`
+gained `--log CAT=LEVEL`. Pairing each write that landed on a FAT sector with the buffer it came
+from gave the tell in one run — every corrupting write's buffer began at a **non-zero page
+offset**: `$0194E200`, `$00BD3200`, `$019D4400`, `$01848200`. Page-aligned buffers were never
+harmed.
+
+`IoMapTransfer` tells the chip how many bytes from one physical address are safe to transfer in
+a single run, and extended that run with
+
+```c
+pages[idx + (run >> 12)] == pages[idx] + (run >> 12)
+```
+
+With `inpage = 0x200` the first run is `4096 - 0x200 = 3584`, so `run >> 12` is **0**: the test
+compares `pages[idx]` with itself, passes trivially, and swallows the next whole page without
+ever checking it is contiguous. The check is permanently one page behind. The HAL then promises
+"5120 contiguous bytes" across two pages that are not, and every byte past the first page
+boundary is read from — or written to — whatever happens to live at the adjacent physical page.
+With `inpage == 0` the index comes out right by accident, which is why the great majority of I/O
+was fine and the damage looked random.
+
+The page a run would grow into is at `(run + inpage) >> 12`, not `run >> 12`.
+
+**Bought.** A fresh install verifies clean three ways: every cluster chain covers its file's
+size, all seven registry hives are complete — `SYSTEM` and `DEFAULT` had been truncated in
+*every* previous install — and the FAT regions a crude "does this look like data" heuristic
+flagged turn out to be plain sequential allocation.
+
+**The lesson is the method, not the bug.** Three explanations fitted the evidence; two were
+wrong and both were disproved by *trying* them, cheaply, and watching nothing change. The one
+that was right came from making the machine report what it actually did.
+
+### Wall 51 — the display driver NT tried first
+
+**Symptom.** With a clean install, the boot reached `win32k` and stopped:
+`STOP: c0000143 {Missing System File} — the required system file DISPLAY_DRIVER.DLL is bad or
+missing.` There is no such file: `DISPLAY_DRIVER.DLL` is NT's placeholder, and the string
+appears nowhere in the hive.
+
+**What it was.** Not a missing driver. NT splits video into a *miniport* that programs the chip
+(`cirrus.sys`, which must know the hardware) and a *display driver* that `win32k` loads
+(`vga.dll`, `cirrus.dll`, `framebuf.dll` — any of which can be generic). Reading the installed
+`SYSTEM` hive showed Setup had written the x86-oriented default:
+
+```
+System\ControlSet001\Services\cirrus\Device0
+    InstalledDisplayDrivers = 'vga | cirrus | vga256 | vga64K'
+```
+
+NT tries them in order, so it reached for `vga.dll` first and got nowhere. All three DLLs are
+present, intact, and PowerPC images; the miniport was healthy too — it logged 59 VGA-port
+translations through the HAL, the same count as the Setup run where video had worked.
+
+**Fixed** by reordering the value to `cirrus | framebuf | vga`: the driver matched to the
+miniport first, the generic linear-framebuffer driver RISC NT normally uses second, VGA last.
+
+**Bought.** **GUI-mode Setup, in graphics mode, on the Cirrus** — the wizard with its window
+chrome and logo, copying `E:\ppc\CONFIG.NT_` to `D:\WINNT\system32\CONFIG.TMP` at 640x480
+through this HAL's drive letters, both 53C825A controllers and `win32k`.
+
+![Setup copying files in graphics mode](traces/2026-09-14-gui-01-copying-files.png)
+
+![The Windows NT Setup wizard](traces/2026-09-14-gui-02-setup-wizard.png)
+
+*Two things are still owed here.* The desktop background renders noisily, which is a display
+driver or emulated-Cirrus question nobody has looked at yet. And ledger row 6 is still defeated
+— now as a one-word patch to `VIDEOPRT.SYS` on the image rather than a memory poke, which at
+least needs no breakpoint timing, and which taught us that NT verifies driver PE checksums:
+the first attempt died with `STATUS_IMAGE_CHECKSUM_MISMATCH` until the checksum was recomputed.
+
 ## The ledger of workarounds
 
 Everything above that is *not* a fix, kept in one place so it is never forgotten:

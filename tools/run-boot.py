@@ -44,14 +44,23 @@ def main():
 
     lines = open(a.script).read().split('\n')
     i = next(n for n, l in enumerate(lines) if l.startswith('checkpoint.load'))
-    run(lines[i])                                    # load first, so the delta exists
 
+    # Take the delta this load creates, not "the newest one": a previous run's delta can still be
+    # lying about (and being written to, if its machine state is still live), and splicing into
+    # the wrong one boots the checkpoint's untouched disk instead — which looks like a corrupt
+    # boot file rather than a rig mistake.
+    before = set(glob.glob(os.path.join(a.delta_dir, '*.delta')))
+    run(lines[i])                                    # load first, so the delta exists
     want = os.path.getsize(a.disk) // 512
-    cands = [f for f in glob.glob(os.path.join(a.delta_dir, '*.delta'))
-             if delta_geometry(f)[1] == want]
-    if not cands:
-        sys.exit(f'no {want}-sector delta in {a.delta_dir}: is the disk attached and writable?')
-    dp = max(cands, key=os.path.getmtime)
+    fresh = [f for f in glob.glob(os.path.join(a.delta_dir, '*.delta'))
+             if f not in before and delta_geometry(f)[1] == want]
+    if not fresh:
+        sys.exit(f'checkpoint.load created no {want}-sector delta in {a.delta_dir} '
+                 f'(is the disk attached and writable?)')
+    if len(fresh) > 1:
+        sys.exit(f'checkpoint.load created {len(fresh)} deltas of that size; cannot tell them '
+                 f'apart: {fresh}')
+    dp = fresh[0]
     off, n = delta_geometry(dp)
     img = open(a.disk, 'rb').read()
     written = 0

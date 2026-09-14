@@ -89,6 +89,10 @@ def main():
     ap.add_argument('--save', default='')
     ap.add_argument('--screenshot', default='')
     ap.add_argument('--scsi-log', action='store_true', help='turn on the emulator SCSI log for the run')
+    ap.add_argument('--log', action='append', default=[], metavar='CAT=LEVEL',
+                    help='enable an emulator log category for the run, e.g. --log scsi=1 '
+                         '--log scripts=4 (scripts level 4 names the host address of every '
+                         'bus-master transfer). Repeatable.')
     ap.add_argument('--delta-patch', action='append', default=[], help='file[@lba] to write into the restored CD scratch delta after checkpoint.load (default lba 98069 = \\PPC\\HALEAGLE.DLL on the OEM 000-48303 CD)')
     ap.add_argument('--computer-ups', type=int, default=5,
                     help='how many Up presses reach the computer-type entry to select, counting\n'
@@ -118,6 +122,9 @@ def main():
         out.append(f'echo "=== poke {addr} was ${{machine.memory.peek.l({addr})}} -> {val} ==="')
         out.append(f'machine.memory.poke.l {addr} {val}')
     if a.scsi_log: out.append('debug.log "scsi" 10')
+    for spec in a.log:
+        cat, _, lvl = spec.partition('=')
+        out.append(f'debug.log "{cat}" {int(lvl or 1)}')
     if a.bp:
         out.append('debug.breakpoints.clear')
         for b in a.bp: out.append(f'debug.breakpoints.add {b}')
