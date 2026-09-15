@@ -13,10 +13,11 @@ reaches a 7500/8500 later instead of being thrown away.*
 > A **stock, unmodified** NT 4.0 PowerPC CD — MD5 `ab37556d…`, not one byte written — now boots
 > on the emulator to text-mode Setup, is offered *Apple Network Server 500/700* as a computer
 > type, loads this project's HAL off the floppy, brings up the Cirrus through `cirrus.sys` and
-> `videoprt`, and stops at the keyboard — **with no poke, breakpoint or patched CD anywhere in
-> the run**. Ledger row 8 is retired and wall 25, the oldest open item, is cleared (§4.3 says why
-> it was never what the notes said it was). **Row 10 is not retired**: §4.4 is why, and what it
-> needs instead.
+> `videoprt`, takes an ADB keyboard driver off the same disk, and reaches Setup's Welcome screen
+> — **with no poke, breakpoint or patched CD anywhere in the run**. Ledger row 8 is retired and wall 25, the oldest open item, is cleared (§4.3 says why
+> it was never what the notes said it was), and wall 26 with it — the ADB keyboard driver arrives
+> on the OEM disk under `[SCSI]`, which is how maciNTosh has always done it (§4.4). Ledger rows 8
+> and 10 are both retired. Setup reaches its **Welcome screen**.
 >
 > The floppy is **not** the boot device. The firmware reads the veneer off it as raw blocks
 > before anything is running, then boots the CD; Setup meets the floppy again later, as its
@@ -69,8 +70,10 @@ python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img \
         --veneer tmp/veneer-fd.exe --setupldr <PPC/SETUPLDR> \
         --hal build/hal.dll --kbd <i8042prt replacement> \
         --display-driver <cirrus.sys> --display-dll <cirrus.dll> \
-        --vga-aperture 0x90000000
+        --vga-aperture 0x90000000 --adb-driver <ADB keyboard driver>
 #   prints the veneer's start block and length -- pass them to step 3
+#   --adb-driver offers the keyboard driver under [SCSI]: at the mass-storage screen press S,
+#   then Other, then pick it.  That is the only OEM class SETUPLDR loads arbitrary drivers for
 #   the three display options are what clear wall 25 (4.3); without them Setup dies
 #   initialising video.  cirrus.sys and cirrus.dll come off the user's own media
 
@@ -106,7 +109,8 @@ R=<ANS ROM>;  ISO=<stock NT CD>
 python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img --veneer tmp/veneer-fd.exe \
         --setupldr <PPC/SETUPLDR> --hal build/hal.dll --kbd <i8042prt replacement> \
-        --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000
+        --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000 \
+        --adb-driver <ADB keyboard driver>
 python3 tools/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
         --floppy tmp/boot-floppy.img --veneer-dev /bandit/gc/swim3 \
         --veneer-block 0x21 --veneer-blocks 0x13c \
@@ -137,7 +141,7 @@ And it retires the two ledger rows that existed *because* we edited the disc:
 |-----|------|--------|
 | 7 | ~~HAL delivered by overwriting `HALEAGLE.DLL`~~ | retired earlier, by `mkoem.py` |
 | 8 | ~~`TXTSETUP.SIF` and `\PPC` directory patches applied to a user's CD~~ | **retired here** — Setup takes the HAL from the OEM disk instead [E16][E17] |
-| 10 | the keyboard driver written over `\PPC\I8042PRT.SYS` | **not retired — I claimed it was and I was wrong.** SETUPLDR has no keyboard OEM class at all (§4.4), so the copy on the floppy is never read |
+| 10 | ~~the keyboard driver written over `\PPC\I8042PRT.SYS`~~ | **retired here** — it is a file on the OEM disk, offered under `[SCSI]` and picked with `S` at the mass-storage screen (§4.4) |
 
 Rows 1–5 (the veneer patches) are *not* retired by a floppy, and this work added row 17 to them.
 They are retired by §7.
@@ -199,8 +203,11 @@ read files with.
    configuration data, fonts, locale, PCMCIA, `SCSIPORT`, `symc810`, `atdisk`, `ntfs`, `cirrus`,
    `videoprt`, `floppy`, `cdrom`, `disk`, `sfloppy`, `i8042prt`, `kbdclass`, `fastfat`, `cdfs`
    [E17].
-7. NTOSKRNL starts on this HAL, reads the partition table, assigns drive letters, and resolves
-   its install source to `E:\PPC` — the CD. Then it hits wall 25 (§4.3).
+7. At the mass-storage screen, `S` / `Other` offers the ADB keyboard driver off the same disk,
+   and at the video screen `Other` offers the Cirrus entry that carries ledger row 6 (§4.3).
+8. NTOSKRNL starts on this HAL, reads the partition table, assigns drive letters, resolves its
+   install source to `E:\PPC` — the CD — brings up the Cirrus, finds the keyboard, and reaches
+   Setup's Welcome screen.
 
 ### 2.2 The other arrangement: boot *from* the floppy
 
@@ -249,6 +256,7 @@ Every row was measured on the emulator, not inferred.
 | **E14** | **SETUPLDR contains a complete FAT reader** — R2 answered | 24 `Fat*` symbols in its table, from `IsFatFileStructure` and `FatOpen` to `FatLookupFatEntry` and `FatVboToLbo`. `IsFatFileStructure` reads 0x3E bytes at offset 0 and checks the jump byte (`EB`/`E9`), bytes-per-sector ∈ {0x80,0x100,0x200,0x400}, and a power-of-two cluster size — all of which `mkbootfloppy.py` writes |
 | **E15** | **A stock CD boots** | The user's own image, MD5 `ab37556d…`, attached and not written: `Booting from 'multi(0)scsi(0)cdrom(0)fdisk(0)\PPC\SETUPLDR'` → Setup's computer-type menu, the stock ten entries and `Other` |
 | **E16** | **Setup reads `txtsetup.oem` off the floppy and offers our computer type** | `Other` → *"Please insert the disk labeled Manufacturer-supplied hardware support disk into Drive A:"* → Enter → *"using a device support disk provided by the computer's manufacturer"* and a one-entry list: **Apple Network Server 500/700**. R4 answered |
+| **E19** | **An OEM `[SCSI]` entry delivers the ADB keyboard driver** | `S` at the mass-storage screen, `Other`, our disk, and *"Apple Desktop Bus keyboard and mouse (via Cuda)"* is offered, chosen and loaded — `HAL: module usbadb.sys at 806e7000`. `i8042prt.sys` and `kbdclass.sys` still load from the CD alongside it; `Setup did not find a keyboard` never appears, and Setup reaches its Welcome screen. The SCSI class is the one SETUPLDR loads any number of drivers for, in a loop, without checking what they are |
 | **E18** | **The boot medium is the source medium** | Booted from the floppy with its own `TXTSETUP.SIF`, SETUPLDR asks for the tag file `\CDROM_W.40` *in the drive it booted from*, and never looks at the CD — it re-prompts for ever. Give the floppy that tag and it accepts the floppy as the distribution and dies at `%SRR0: 00000000` when the files are not there |
 | **E17** | **Our HAL is loaded from the floppy, and Setup carries on** | `Setup is loading files (Apple Network Server 500/700)...` then Configuration Data, Setup Font, Locale, Windows NT Setup, PCMCIA, SCSI Port Driver, `Symbios Logic C810 PCI SCSI Host Adapter`, ESDI/IDE, NTFS, the Cirrus display, floppy, CD-ROM, SCSI disk, keyboard, FAT and CDFS — then `HAL: halshinr 0.1 … (phase 0)`, 54 memory descriptors, both 53C825As, `IoReadPartitionTable`, `C:`/`D:`/`E:`, and `system path -> 'E:\PPC'` |
 
@@ -358,38 +366,64 @@ Three things this cost that are worth stating once:
    first investigation concluded. The code that produces it says otherwise in about forty
    instructions.
 
-### 4.4 What is in the way now: the keyboard, and it needs a bigger medium
+### 4.4 Wall 26 — the keyboard, through the class nobody would guess
 
 Past video, Setup asks the next question and it is **wall 26**: *"Setup did not find a keyboard
 connected to your computer."* It is right — the keyboard is ADB behind Cuda, and the CD's
-`i8042prt.sys` probes a port `0x60` this machine does not have.
+`i8042prt.sys` probes a port `0x60` this machine does not have. This project solved it months ago
+by writing a replacement over the CD's `\PPC\I8042PRT.SYS` (ledger row 10) — exactly what this
+plan set out to stop doing.
 
-This project solved that months ago by writing maciNTosh's driver over the CD's
-`\PPC\I8042PRT.SYS` (ledger row 10) — which is exactly what this plan set out to stop doing.
-The floppy carries that driver and a `[Keyboard]` class for it. **Setup never reads either**, and
-the reason is structural:
+**It is delivered through the `[SCSI]` class.** Not `[Keyboard]`.
 
-* **SETUPLDR has OEM prompts for SCSI, Computer and Display, and none for the keyboard.** There
-  are exactly two `SlLoadOemDriver` call sites in the whole loader — one for SCSI, in a loop over
-  a list, and one for video. `SlPromptOemHal` has none at all: the Computer class contributes the
-  HAL and nothing else. `txtsetup.oem`'s `[Keyboard]` section belongs to `setupdd.sys`, which
-  runs under NT — long after Setup has demanded a keyboard, and behind an NT floppy driver that
-  does not exist (R3).
-* **So the keyboard driver has to come from the medium Setup booted from**, by the name SETUPLDR
-  hardcodes. On a stock CD that is the CD's own file.
-* **And the boot medium is the source medium** (§2.2, E18) — so making the floppy the boot
-  device does not help either: Setup then wants the whole text-mode file set on it.
+The reasoning that says otherwise is seductive and wrong, and this document contained it for a
+few hours. It goes: SETUPLDR has OEM prompts for SCSI, Computer and Display and none for the
+keyboard (true — there are exactly two `SlLoadOemDriver` call sites, one for SCSI in a loop over
+a list, one for video, and `SlPromptOemHal` has none at all); `txtsetup.oem`'s `[Keyboard]`
+section belongs to `setupdd.sys`, which runs under NT behind a floppy driver that does not exist
+(also true); therefore an OEM disk cannot deliver a keyboard driver (**false**).
 
-That leaves one shape that fits: **a boot medium we control that is also large enough to be
-Setup's source.** A small FAT partition on the SCSI disk the user is installing to would be
-exactly that — `mkarcdisk.py` already creates the ARC system partition next to it, the text-mode
-set is a few megabytes, and the CD is still never written. The floppy work is not wasted: the
-veneer, the HAL, `txtsetup.oem` and the OEM `Computer`/`Display` classes all move across
-unchanged, because none of them depends on the medium being a floppy.
+What that misses is that the SCSI class does not check what it is loading. It is the one class
+SETUPLDR loads *any number* of drivers for, in a loop, and it will load any NT driver you name.
+A driver that creates `\Device\KeyboardPort` and `\Device\PointerPort` — which is what
+`kbdclass` and `mouclass` open — works perfectly well when Setup thinks it is a SCSI miniport.
 
-It is worth saying plainly that this is further than the plan expected to get and a different
-answer than it expected to give. Rows 8 and 10 were both written as "retired by this plan". Row
-8 is. **Row 10 is not**, and an earlier version of this document said it was.
+maciNTosh has shipped it this way all along, and its README says so in plain sight: at the
+mass-storage screen, *press `S` to pick a driver, choose `Other`*, and the entry is
+**"PowerMac General HID & Storage"** — a driver whose own description is *"currently only
+implements ADB keyboard/mouse and ramdisk as floppy drive for installing drivers at text setup
+time"*. Same chipset family, same problem, same solution. The lesson is the cheap one: when a
+neighbouring project has solved the thing you have just proved impossible, read how before
+publishing the proof.
+
+So `mkbootfloppy.py --adb-driver` puts the driver on the disk as `USBADB.SYS` and offers it as:
+
+```
+[SCSI]
+usbadb = "Apple Desktop Bus keyboard and mouse (via Cuda)"
+
+[Files.SCSI.usbadb]
+driver = d1, usbadb.sys, usbadb
+```
+
+The key is `usbadb`, not `i8042prt`, because the CD's real `i8042prt.sys` still loads by name
+from `TXTSETUP.SIF` and two services cannot share one name. Both end up in the module list; only
+ours finds a keyboard.
+
+**The result, on a stock CD with no poke anywhere** [E19]: `S`, `Other`, Enter, and Setup reports
+
+```
+Setup will load support for the following mass storage device(s):
+    Symbios Logic C810 PCI SCSI Host Adapter
+    Apple Desktop Bus keyboard and mouse (via Cuda)
+```
+
+then loads it (`HAL: module usbadb.sys`), and the keyboard message never appears:
+
+![Setup's Welcome screen, on a stock CD with everything ours on the floppy](../traces/2026-09-15-wall26-cleared-welcome.png)
+
+**Ledger row 10 is retired** — for real this time. Row 9 is not: the driver is still maciNTosh's
+`usbadb.sys`, which we may run and may not redistribute, and C5 is still what fixes that.
 
 ## 5. What has to be built
 
@@ -402,7 +436,7 @@ answer than it expected to give. Rows 8 and 10 were both written as "retired by 
 | C5 | our own ADB port driver | not started. Replaces maciNTosh's `usbadb.sys`, the last non-shippable piece. `entii-for-workcubes` `fpsidrv`; the HAL half exists |
 | C6 | `nvramrc` installer | not started. The §2.1 block as one line, so the machine boots the floppy unattended. E10 says `nvramrc` exists; the one-line form is untested |
 | **C7** | ~~an OEM display class~~ **done** | `--display-driver`, `--display-dll` and `--vga-aperture 0x90000000`. Wall 25 cleared with no poke anywhere (§4.3). Still ledger row 6 — it edits a Microsoft driver's data — but it is now the edit the ledger always asked for, and one an OEM disk can deliver |
-| **C8** | **a boot medium big enough to be Setup's source** | **the blocker** (§4.4). A small FAT partition on the install disk, carrying `SETUPLDR`, `TXTSETUP.SIF`, the media tag and the text-mode driver set copied from the user's own CD — including our `\PPC\I8042PRT.SYS`, which is the only way an ADB keyboard reaches text-mode Setup without writing to the disc. `mkarcdisk.py` already builds the partition next door; everything the floppy carries moves across unchanged |
+| **C8** | ~~the keyboard~~ **done** | `--adb-driver` offers it under `[SCSI]` (§4.4). Ledger row 10 retired |
 
 ## 6. Order of work
 
@@ -414,8 +448,10 @@ answer than it expected to give. Rows 8 and 10 were both written as "retired by 
    Ledger rows 8 and 10 are retired.
 4. ~~C7 — the display.~~ **Done**, and wall 25 with it (§4.3). A stock CD now reaches Setup's
    keyboard question with no poke anywhere.
-5. **C8 next** — the keyboard, which needs a boot medium that can also be the source (§4.4).
-   Nothing smaller will do: it is not a missing option, it is SETUPLDR's structure.
+5. ~~C8 — the keyboard.~~ **Done** (§4.4). Text-mode Setup now reaches its Welcome screen from a
+   stock CD. **Next is simply to finish the install** — partition, format, copy, reboot — which
+   the patched-CD path has already driven end to end, so nothing new is expected until the
+   installed system's two registry workarounds.
 6. **C6**, `nvramrc`, which removes the typing.
 7. **C5**, our own ADB driver, which is what makes the floppy image redistributable.
 8. Only then revisit the single-file/browser idea, which becomes a ~1.4 MB download built from
@@ -517,6 +553,14 @@ planning around the error.
 draft as "leave it open". What is measured is narrower: the drive must be opened *once* from the
 firmware prompt before `go`. Whether it may then be closed before the veneer's own first open is
 untested — SETUPLDR's much later open works fine after a close (E16).
+
+**I proved something impossible that a neighbouring project does routinely.** §4.4 argued, from
+three correct observations, that an OEM disk cannot deliver a keyboard driver — and published it.
+maciNTosh ships exactly that driver, on exactly this chipset family, through the `[SCSI]` class,
+and its README describes the keystrokes. The error was not in the observations; it was in
+treating "there is no `[Keyboard]` route" as "there is no route", and not spending ten minutes
+reading a project already named four times in this repository. When a proof of impossibility is
+about to be written down, check who has already done the thing.
 
 **The plan's own shape was wrong, and the evidence said so before I did.** §2 was written as
 "boot from the floppy", and E3 — SETUPLDR resolves everything against its boot device — was

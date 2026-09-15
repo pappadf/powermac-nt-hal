@@ -262,13 +262,37 @@ def move_vga_aperture(driver, to):
     return bytes(d)
 
 
-def txtsetup_oem(display):
+# SETUPLDR has OEM prompts for SCSI, Computer and Display and none for the keyboard -- and the
+# SCSI class is the one it loads *any number* of drivers for, in a loop, without checking what
+# they are.  maciNTosh ships its ADB keyboard/mouse driver exactly this way: at the mass-storage
+# screen, S, Other, and "PowerMac General HID & Storage" is an entry in its txtsetup.oem's
+# [SCSI] section.  The driver just has to be an NT driver that creates the port devices kbdclass
+# and mouclass open -- this one creates \\Device\\KeyboardPort and \\Device\\PointerPort --
+# and nothing in SETUPLDR minds that it is not a SCSI miniport.  The file and key are usbadb,
+# not i8042prt, because the CD's real i8042prt.sys is loaded by name as well and two services
+# cannot share one.
+OEM_SCSI = """
+[SCSI]
+usbadb = "Apple Desktop Bus keyboard and mouse (via Cuda)"
+
+[Files.SCSI.usbadb]
+driver = d1, usbadb.sys, usbadb
+
+[Config.usbadb]
+"""
+
+
+def txtsetup_oem(display, adb=False):
     defaults = ['\n[Defaults]', 'computer = shiner_up', 'keyboard = adb_kbd']
     if display:
         defaults.append('display = ans_cirrus')
+    if adb:
+        defaults.append('scsi = usbadb')
     body = OEM_HEADER + '\n'.join(defaults) + '\n' + OEM_COMPUTER + OEM_KEYBOARD
     if display:
         body += OEM_DISPLAY
+    if adb:
+        body += OEM_SCSI
     return body + '\n[Strings]\n'
 
 
@@ -278,6 +302,10 @@ def main():
     ap.add_argument('--veneer', required=True, help='VENEER.EXE, already patched by mkveneer.py')
     ap.add_argument('--setupldr', required=True, help="PPC/SETUPLDR from the user's CD")
     ap.add_argument('--hal', required=True, help='build/hal.dll — installed as HALSHINR.DLL')
+    ap.add_argument('--adb-driver', metavar='PATH',
+                    help='the ADB keyboard/mouse driver, installed as USBADB.SYS and offered under '
+                         'the SCSI prompt (S, Other) -- the only OEM class SETUPLDR loads more '
+                         'than one driver for, and how maciNTosh delivers the same driver')
     ap.add_argument('--tag', metavar='PATH',
                     help="the distribution's media tag file, e.g. the CD's own CDROM_W.40, "
                          'placed in this disk\'s root under the same name. `[SourceDisksNames]` '
@@ -327,7 +355,8 @@ def main():
                               ('HALSHINR.DLL', a.hal, root),
                               ('I8042PRT.SYS', a.kbd, root),
                               ('CIRRUS.SYS', a.display_driver, root),
-                              ('CIRRUS.DLL', a.display_dll, root)):
+                              ('CIRRUS.DLL', a.display_dll, root),
+                              ('USBADB.SYS', a.adb_driver, root)):
         if path is None:
             print(f'  ({name} omitted -- no path given)')
             continue
@@ -356,7 +385,7 @@ def main():
         ppc.append(fs.dirent('I8042PRT.SYS', c, len(data)))
         print('  \\PPC\\I8042PRT.SYS   a second copy, for booting from this disk')
 
-    oem = read(a.oem) if a.oem else txtsetup_oem(display).encode('ascii')
+    oem = read(a.oem) if a.oem else txtsetup_oem(display, bool(a.adb_driver)).encode('ascii')
     oc, _ = fs.alloc(oem)
 
     root = [fs.subdir('PPC', ppc), fs.dirent('TXTSETUP.OEM', oc, len(oem))] + root
