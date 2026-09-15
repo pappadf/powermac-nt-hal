@@ -15,7 +15,9 @@ so the user's Windows NT CD can be used exactly as it was pressed.
   * `\\HALSHINR.DLL`     this project's HAL, in the **root**, because that is where a
                           `[Disks]` line's directory field points Setup.
   * `\\I8042PRT.SYS`     the ADB keyboard driver that stands in for the one NT expects.
-  * `\\TXTSETUP.OEM`     the OEM description that offers the HAL as a computer type (C2).
+  * `\\TXTSETUP.OEM`     the OEM description that offers the HAL as a computer type (C2), and
+                          -- with `--display-driver` -- a display type as well, which is how
+                          ledger row 6 reaches a boot that applies no pokes.
 
 Nothing from Microsoft is stored in this repository: every file above is named on the command
 line and comes from the user's own media.  The tool writes an image; it ships no content.
@@ -138,7 +140,7 @@ class Fat12:
         return bytes(self.img)
 
 
-TXTSETUP_OEM = """\
+OEM_HEADER = """\
 ; SPDX-License-Identifier: GPL-2.0-only
 ; The OEM description text-mode Setup reads off this floppy.
 ;
@@ -146,22 +148,20 @@ TXTSETUP_OEM = """\
 ; `Config.` and `Strings` sit together in its string table beside the source path
 ; `D:\\nt\\private\\ntos\\boot\\setup\\oemdisk.c`, and `hal`, `driver`, `inf`, `dll`, `class`, `port`
 ; and `detect` -- the keys inside a `[Files.<class>.<id>]` section -- sit together a little
-; before it.  The shapes of the entries follow the CD's own TXTSETUP.SIF: a `[Computer]` line is
-; `id = "description", files-section`, and a `[Keyboard]` line adds the driver's registry key as
-; a third field, exactly as `STANDARD = "XT, AT, or Enhanced Keyboard (83-104 keys)",files.i8042,
-; i8042prt` does there.
+; before it.  The shapes of the entries follow the CD's own TXTSETUP.SIF: a `[Computer]` or
+; `[Display]` line is `id = "description", files-section`, and a `[Keyboard]` line adds the
+; driver's registry key as a third field, exactly as
+; `STANDARD = "XT, AT, or Enhanced Keyboard (83-104 keys)",files.i8042,i8042prt` does there.
 ;
-; UNTESTED as a whole: what is verified is the format, not that Setup accepts an OEM `Computer`
-; in place of the HAL TXTSETUP.SIF names.  That is risk R4 in
-; docs/2026-09-15-the-boot-floppy.md.
+; The `[Computer]` class is the one that is exercised end to end: Setup offers it, loads
+; \\HALSHINR.DLL off this disk, and carries on.  The others are written to the same shapes and
+; are not yet confirmed -- see docs/2026-09-15-the-boot-floppy.md, risk R4.
 
 [Disks]
 d1 = "Apple Network Server 500/700 support disk", \\txtsetup.oem, \\
+"""
 
-[Defaults]
-computer = shiner_up
-keyboard = adb_kbd
-
+OEM_COMPUTER = """
 [Computer]
 shiner_up = "Apple Network Server 500/700", files.shiner_up
 
@@ -169,7 +169,9 @@ shiner_up = "Apple Network Server 500/700", files.shiner_up
 hal = d1, halshinr.dll
 
 [Config.shiner_up]
+"""
 
+OEM_KEYBOARD = """
 [Keyboard]
 adb_kbd = "Apple Desktop Bus keyboard", files.adb_kbd, i8042prt
 
@@ -177,9 +179,41 @@ adb_kbd = "Apple Desktop Bus keyboard", files.adb_kbd, i8042prt
 driver = d1, i8042prt.sys, i8042prt
 
 [Config.i8042prt]
-
-[Strings]
 """
+
+# The display class exists for one reason: ledger row 6.  cirrus.sys claims the legacy VGA
+# aperture, which is RAM on this board, VideoPortVerifyAccessRanges reports the conflict, and
+# Setup dies initialising video (wall 25).
+#
+# There is exactly one `driver =` line because SETUPLDR loads exactly one image per OEM class --
+# SlInit calls SlLoadOemDriver once after SlPromptOemVideo -- and it takes the *first* file key
+# in the section.  Measured both ways: with `port` first, videoprt.sys came off this disk and no
+# miniport was loaded at all; with `driver` first, cirrus.sys comes off this disk and its import
+# of VIDEOPRT.SYS is resolved from the CD.  So whatever clears wall 25 has to be in the
+# miniport -- and moving the miniport's own legacy-VGA access range out of RAM does not clear
+# it, which was measured too.  The claim comes from somewhere else, and until that is found this
+# class buys nothing: the options exist because they are the delivery channel the fix will need.
+OEM_DISPLAY = """
+[Display]
+ans_cirrus = "Cirrus Logic 54M30 (Apple Network Server 500/700)", files.ans_cirrus
+
+[Files.Display.ans_cirrus]
+driver = d1, cirrus.sys, cirrus
+dll = d1, cirrus.dll
+
+[Config.ans_cirrus]
+"""
+
+
+
+def txtsetup_oem(display):
+    defaults = ['\n[Defaults]', 'computer = shiner_up', 'keyboard = adb_kbd']
+    if display:
+        defaults.append('display = ans_cirrus')
+    body = OEM_HEADER + '\n'.join(defaults) + '\n' + OEM_COMPUTER + OEM_KEYBOARD
+    if display:
+        body += OEM_DISPLAY
+    return body + '\n[Strings]\n'
 
 
 def main():
@@ -189,6 +223,8 @@ def main():
     ap.add_argument('--setupldr', required=True, help="PPC/SETUPLDR from the user's CD")
     ap.add_argument('--hal', required=True, help='build/hal.dll — installed as HALSHINR.DLL')
     ap.add_argument('--kbd', help='the driver installed as I8042PRT.SYS (optional while C5 is open)')
+    ap.add_argument('--display-driver', help='the display miniport, installed as CIRRUS.SYS')
+    ap.add_argument('--display-dll', help='the display DLL, installed as CIRRUS.DLL')
     ap.add_argument('--oem', help='a txtsetup.oem to use instead of the one built in')
     ap.add_argument('--label', default='NTOEMDISK')
     a = ap.parse_args()
@@ -212,15 +248,20 @@ def main():
     root = []
     for name, path, where in (('SETUPLDR', a.setupldr, ppc),
                               ('HALSHINR.DLL', a.hal, root),
-                              ('I8042PRT.SYS', a.kbd, root)):
+                              ('I8042PRT.SYS', a.kbd, root),
+                              ('CIRRUS.SYS', a.display_driver, root),
+                              ('CIRRUS.DLL', a.display_dll, root)):
         if path is None:
-            print(f'  (no --kbd: {name} omitted)')
+            print(f'  ({name} omitted -- no path given)')
             continue
         data = read(path)
         c, _ = fs.alloc(data)
         where.append(fs.dirent(name, c, len(data)))
 
-    oem = read(a.oem) if a.oem else TXTSETUP_OEM.encode('ascii')
+    display = bool(a.display_driver and a.display_dll)
+    if not display and (a.display_driver or a.display_dll):
+        sys.exit('the display class needs both --display-driver and --display-dll, or neither')
+    oem = read(a.oem) if a.oem else txtsetup_oem(display).encode('ascii')
     oc, _ = fs.alloc(oem)
 
     root = [fs.subdir('PPC', ppc), fs.dirent('TXTSETUP.OEM', oc, len(oem))] + root
