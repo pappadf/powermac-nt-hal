@@ -3,10 +3,23 @@
 
 # The boot floppy
 
-*15 September 2026. A plan to stop patching the user's Windows NT CD. Everything this project
-adds — the HAL, the veneer's seven patch sites, the ADB keyboard driver — moves onto a floppy,
-and the CD is used unmodified, as pressed. Targeting the Apple Network Server first, but built so
-the same work reaches a 7500/8500 later instead of being thrown away.*
+*15 September 2026. Stop patching the user's Windows NT CD. Everything this project adds — the
+HAL, the veneer's patch sites, the ADB keyboard driver — moves onto a floppy, and the CD is used
+unmodified, as pressed. Targeting the Apple Network Server first, but built so the same work
+reaches a 7500/8500 later instead of being thrown away.*
+
+> **Status: it works, and the shape is not the one this document first proposed.**
+>
+> A **stock, unmodified** NT 4.0 PowerPC CD — MD5 `ab37556d…`, not one byte written — now boots
+> on the emulator to text-mode Setup, is offered *Apple Network Server 500/700* as a computer
+> type, loads this project's HAL off the floppy, and carries on through the SCSI, IDE and NTFS
+> drivers to the video and disk screens. Ledger rows 8 and 10 are retired.
+>
+> The floppy is **not** the boot device. The firmware reads the veneer off it as raw blocks
+> before anything is running, then boots the CD; Setup meets the floppy again later, as its
+> ordinary *device support disk*. §2 is the sequence, §3 the evidence, §4 the two things that
+> were in the way and how each was cleared. Booting *from* the floppy also now gets as far as
+> Setup's own screens, and is kept in §2.2 because §7 may want it.
 
 ## 0. Before you start
 
@@ -45,20 +58,26 @@ machine to apply a console change.
 ### 0.2 Generating the scripts
 
 ```bash
-# a cold boot from power-on to Setup: no pokes, no breakpoints, no checkpoint
-python3 tools/mkcoldboot.py --rom $R --cd <patched.iso> --staging <disk.img> \
-        --out tmp/cold.gs --screenshot tmp/cold.png --chunks 1400
-#   --veneer-dev / --cd-dev   the Open Firmware paths for the veneer source and the boot device
-#   --console screen          type on the ADB keyboard instead of the serial port (see §9)
+# 1. the veneer, with the ledger's byte patches applied (rows 1-5 and 17)
+python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 
-# the veneer, with ledger rows 1-5 applied as bytes rather than pokes
-python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer.exe --for cd \
-        --stage <disk.img>@0x800
+# 2. the floppy: that veneer, SETUPLDR, the HAL, the keyboard driver, a txtsetup.oem
+python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img \
+        --veneer tmp/veneer-fd.exe --setupldr <PPC/SETUPLDR> \
+        --hal build/hal.dll --kbd <i8042prt replacement>
+#   prints the veneer's start block and length -- pass them to step 3
 
-# a whole patched CD + a staging image, from a pristine disc
-python3 tools/mkpatchediso.py <NT.iso> tmp/out.iso --hal build/hal.dll \
-        --kbd <i8042prt replacement> --staging tmp/staging.img
+# 3. a cold boot of the *stock* CD, with the veneer read off the floppy
+python3 tools/mkcoldboot.py --rom $R --cd <stock.iso> --staging <install-target.img> \
+        --floppy tmp/boot-floppy.img \
+        --veneer-dev /bandit/gc/swim3 --veneer-block 0x21 --veneer-blocks 0x13c \
+        --cd-dev /bandit/53c825@11/sd@0,0 --out tmp/fd.gs --chunks 900
+#   --console screen   type on the ADB keyboard instead of the serial port (see 9)
 ```
+
+The install target is any disk with an ARC system partition —
+`mkarcdisk.py --part 4096:65536 --part 69632:0`. Nothing is written to the CD at any point, and
+`--cd` may be the user's own image opened read-only.
 
 ### 0.3 The artifacts these experiments used
 
@@ -66,55 +85,60 @@ None are in git; all are reproducible.
 
 | artifact | what | how to make it |
 |---|---|---|
-| `tmp/nt-one.iso` | patched CD | `mkpatchediso.py` (above) |
-| `tmp/nt-onedisk.img` | 512 MB disk: ARC system partition at LBA 4096, **and the veneer at block `0x800`** in the gap before it | `mkarcdisk.py --part 4096:65536 --part 69632:0` then `mkpatchediso.py --veneer-into` |
-| `tmp/oem-floppy.img` | 1.44 MB FAT12 floppy | below |
-| `tmp/nt-pre-go-big2.ckpt` | pre-`go` checkpoint | expensive; `mkcoldboot.py` makes it largely unnecessary. **Invalidated by any emulator rebuild** — `tools/restamp-ckpt.py <gs-headless> <ckpt>` fixes that when the rebuild changed no checkpointed structure |
+| `tmp/boot-floppy.img` | **the floppy** | 0.2 step 2 |
+| `tmp/veneer-fd.exe` | the patched veneer | 0.2 step 1 |
+| the CD | **unmodified**, MD5 `ab37556d…` | — |
+| `tmp/nt-onedisk.img` | 512 MB install target: ARC system partition at LBA 4096 | `mkarcdisk.py --part 4096:65536 --part 69632:0` |
+| `tmp/nt-one.iso` | the *old* patched CD, only needed to reproduce the 4 experiments | `mkpatchediso.py` |
+| `tmp/nt-pre-go-big2.ckpt` | pre-`go` checkpoint | expensive, and `mkcoldboot.py` makes it unnecessary. **Invalidated by any emulator rebuild** — `tools/restamp-ckpt.py <gs-headless> <ckpt>` fixes that when the rebuild changed no checkpointed structure |
 
-```python
-# tmp/oem-floppy.img — a plain FAT12 floppy, enough for the firmware to read
-import struct
-img = bytearray(b'\x00' * 1474560); bs = bytearray(512)
-bs[0:3] = b'\xeb\x3c\x90'; bs[3:11] = b'MSDOS5.0'
-struct.pack_into('<HBHBHHBHHHII', bs, 11, 512,1,1,2,224,2880,0xF0,9,18,2,0,0)
-bs[38] = 0x29; bs[43:54] = b'NTOEMDISK  '; bs[54:62] = b'FAT12   '; bs[510:512] = b'\x55\xaa'
-img[0:512] = bs; img[512] = 0xF0; img[513] = 0xFF; img[514] = 0xFF
-open('tmp/oem-floppy.img','wb').write(bytes(img))
-```
-
-### 0.4 The one command that reproduces the blocker
+### 0.4 The one command that reproduces the result
 
 ```bash
-python3 tools/mkcoldboot.py --rom $R --cd tmp/nt-one.iso --staging tmp/nt-onedisk.img \
-    --veneer-dev /bandit/53c825@12/sd@0,0 --cd-dev /bandit/gc/swim3 \
-    --out tmp/fd.gs --chunks 500
-# then, in tmp/fd.gs: insert the floppy after the attach lines, and before `go` add
-#     machine.memory.poke.l 0x60c0c 0x00000760      (VrDebug: see Appendix A)
-# run it, then:
-grep -c FloppyDiskPeripheral tmp/fd.log        # 2 with bootpath on the floppy, 1 without
-grep -oE "find_boot_dev:[^\\]*|VrOpen returned [0-9]+" tmp/fd.log
+R=<ANS ROM>;  ISO=<stock NT CD>
+python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
+python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img --veneer tmp/veneer-fd.exe \
+        --setupldr <PPC/SETUPLDR> --hal build/hal.dll --kbd <i8042prt replacement>
+python3 tools/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
+        --floppy tmp/boot-floppy.img --veneer-dev /bandit/gc/swim3 \
+        --veneer-block 0x21 --veneer-blocks 0x13c \
+        --cd-dev /bandit/53c825@11/sd@0,0 --out tmp/fd.gs --chunks 900
+./build/headless/gs-headless --speed=turbo --no-prompt -q \
+        rom=$R --var ROM=$R --checkpoint-dir=tmp/ckpt script=tmp/fd.gs > tmp/fd.log 2>&1
+grep -c "Other" tmp/fd.log        # the computer-type menu, with a stock CD's ten entries + Other
 ```
+
+Roughly twenty minutes on two cores, most of it the firmware typing at 6 M instructions per
+character. Driving Setup past that menu means appending stages that send `\r` — the menu opens
+on its **last** entry, which is `Other`; `tmp/fdD.gs` and `tmp/fdG.gs` in the write-up runs are
+the pattern.
 
 ## 1. Why
 
-The deliverable today is a 578 MB ISO with 126 KB overwritten. It works, it is verified, and it
-can never be shared: it is Microsoft's disc with our bytes in it. Every recipient has to bring
-their own CD anyway, so the only thing worth distributing is the 126 KB — plus whatever replaces
-maciNTosh's `usbadb.sys`, which is not ours to redistribute either.
+The deliverable used to be a 578 MB ISO with 126 KB overwritten. It worked, it was verified, and
+it could never be shared: it was Microsoft's disc with our bytes in it. Every recipient has to
+bring their own CD anyway, so the only thing worth distributing is the 126 KB — plus whatever
+replaces maciNTosh's `usbadb.sys`, which is not ours to redistribute either.
 
 A floppy inverts that. The user keeps their CD untouched; we ship ~1.4 MB. It also makes the
 browser-patcher idea trivial — no 578 MB upload, no in-place ISO surgery, just a download.
 
-And it retires the two ledger rows that exist *because* we edit the disc:
+And it retires the two ledger rows that existed *because* we edited the disc:
 
-| row | what | retired by |
-|-----|------|-----------|
-| 7 | ~~HAL delivered by overwriting `HALEAGLE.DLL`~~ (already retired by `mkoem.py`) | — |
-| 8 | the `TXTSETUP.SIF` and `\PPC` directory patches edit a user's CD image | this plan |
+| row | what | status |
+|-----|------|--------|
+| 7 | ~~HAL delivered by overwriting `HALEAGLE.DLL`~~ | retired earlier, by `mkoem.py` |
+| 8 | ~~`TXTSETUP.SIF` and `\PPC` directory patches applied to a user's CD~~ | **retired here** — Setup takes the HAL from the OEM disk instead [E16][E17] |
+| 10 | ~~the keyboard driver written over `\PPC\I8042PRT.SYS`~~ | **retired here** — it is a file on the OEM disk, named by `txtsetup.oem` |
 
-Rows 1–5 (the veneer patches) are *not* retired by a floppy. They are retired by §7.
+Rows 1–5 (the veneer patches) are *not* retired by a floppy, and this work added row 17 to them.
+They are retired by §7.
 
-## 2. How the boot would work, step by step
+One row is **not** retired and turns out to stand in the way: row 6, the
+`VideoPortVerifyAccessRanges` bypass, still has no poke-free form, and §4.3 is where that now
+bites.
+
+## 2. How the boot works, step by step
 
 Numbers in brackets are the evidence in §3.
 
@@ -130,37 +154,64 @@ setenv load-base 3E00000
 reset-all
 ```
 
-**Then, every boot.** The firmware reads the veneer off the floppy and starts it:
+### 2.1 The arrangement that works: boot the CD, read the veneer off the floppy
+
+The floppy is not the boot device. It is where the *firmware* gets the veneer, and later where
+*Setup* gets its device support disk. The CD is never written to and never has to be.
 
 ```
-dev /packages/pe-loader   3D00000 27800 map-space   dev /      \ map first, or DMA fails  [E2]
-0 value fdih   " /bandit/gc/swim3" open-dev to fdih            \ OF opens the drive       [E1]
-3D00000 0 13C " read-blocks" fdih $call-method .               \ OF reads the floppy      [E2]
+dev /packages/pe-loader   3D00000 27800 map-space   dev /     \ map first, or DMA fails    [E2]
+0 value diskih
+" /bandit/gc/swim3" open-dev to diskih                        \ OF opens the drive         [E1]
+3D00000 21 20 " read-blocks" diskih $call-method .            \ 0x13C blocks from 0x21,
+                                                              \ 0x20 at a time             [E11]
+diskih close-dev
 dev /packages/pe-loader   3E00000 27800 map-space   dev /
 3D00000 3E00000 27800 move   27800 to loadsize   init-program
-" /bandit/gc/swim3" encode-string " bootpath" _chosen (property)
+" /bandit/53c825@11/sd@0,0" encode-string " bootpath" _chosen (property)   \ the CD
 go
 ```
 
-None of those words is line-oriented, so the whole block can very likely be one line — which is
-what makes `nvramrc` viable (§6, step 5) and reduces the typing to nothing.
+Block `0x21` and length `0x13C` are not magic: `mkbootfloppy.py` allocates the veneer first, so
+it starts at cluster 2, and prints both numbers. Nothing here parses a filesystem — the firmware
+reads sectors, which is why the veneer can be a file *and* be loadable before anything exists to
+read files with.
 
 **What happens after `go`:**
 
-1. The veneer starts at `0x50000`, already carrying ledger rows 1–5 as bytes (`mkveneer.py`).
-2. It reads `/chosen bootpath` — now the floppy — and builds its ARC device tree.
-3. It loads `\PPC\SETUPLDR` **from the floppy**, because SETUPLDR is resolved relative to the
-   boot device [E3]. *This is the step that does not work yet*: the veneer currently names the
-   drive `multi(0)other(0)other(0)` and `VrOpen` on it returns `EIO` (E7b, §4).
-4. SETUPLDR opens its boot device **raw** and parses the filesystem itself [E3]. On the CD that
-   is ISO 9660; on a floppy it must be FAT — and `fat-files` is in every ROM we looked at [E9],
-   though it is SETUPLDR's own reader that matters, not the firmware's (§8, R2).
-5. SETUPLDR finds `txtsetup.oem` on that floppy and reads the OEM `Computer` class — our HAL —
-   using firmware I/O only, with no NT driver anywhere in the path [E4][E5].
-6. It also finds `\PPC\I8042PRT.SYS` there, because that name is resolved on the boot device
-   [E3]. This is how the ADB keyboard driver arrives without touching the CD.
-7. NTOSKRNL starts. From here the **CD**, unmodified, supplies every other file over SCSI with
-   stock Microsoft drivers — which this project has already driven end to end to a desktop.
+1. The veneer starts at `0x50000`, already carrying ledger rows 1–5 and 17 as bytes.
+2. It reads `/chosen bootpath` — the CD — and builds its ARC device tree. The drive is in that
+   tree as `multi(0)disk(0)fdisk(0)`, which is what row 17 buys [E13].
+3. It loads `\PPC\SETUPLDR` from the CD and starts it. **The CD is the one that was pressed**
+   [E15].
+4. Setup reaches the computer-type menu, whose last entry is `Other`.
+5. `Other` makes SETUPLDR ask for the manufacturer's disk and read `\TXTSETUP.OEM` off
+   `multi(0)disk(0)fdisk(0)` — the floppy. It offers *Apple Network Server 500/700* [E16].
+6. Choosing it loads `\HALSHINR.DLL` from the floppy, and Setup goes on to its own drivers:
+   configuration data, fonts, locale, PCMCIA, `SCSIPORT`, `symc810`, `atdisk`, `ntfs`, `cirrus`,
+   `videoprt`, `floppy`, `cdrom`, `disk`, `sfloppy`, `i8042prt`, `kbdclass`, `fastfat`, `cdfs`
+   [E17].
+7. NTOSKRNL starts on this HAL, reads the partition table, assigns drive letters, and resolves
+   its install source to `E:\PPC` — the CD. Then it hits wall 25 (§4.3).
+
+### 2.2 The other arrangement: boot *from* the floppy
+
+Point `bootpath` at the drive instead and the veneer loads `\PPC\SETUPLDR` off the floppy — the
+shape this document originally proposed. It works as far as SETUPLDR's own screens, and stops
+where NT's x86 boot-floppy set would expect a `txtsetup.sif` on the boot medium, which we do not
+put there:
+
+```
+INF file txtsetup.sif is corrupt or missing.
+```
+
+That is a *good* error. It means the floppy was opened, the FAT12 filesystem was read, and
+SETUPLDR knew which file it wanted — before row 17 the same run said
+`The file multi(0)other(0)other(0) is corrupted.` [E14]. §2.1 is better in every way for an ANS,
+so this is kept only because §7 may want it: a replacement ARC firmware on a 7500/8500 has no CD
+to boot from until it can read one.
+
+Booting from the floppy needs one extra thing §2.1 gets for free — see E12.
 
 ## 3. What we have actually verified
 
@@ -175,88 +226,110 @@ Every row was measured on the emulator, not inferred.
 | E5 | SETUPLDR's I/O is firmware I/O | `VrOpen: Exit - FileId: 2 IHandle: ff8d3200` — an Open Firmware instance handle. ARC → veneer → OF, no NT driver |
 | E6 | `setupdd.sys` has an **NT-side** OEM path | wide strings `\device\floppy0\txtsetup.oem`, `\device\floppy%u`, sections `Disks Defaults Computer Display Keyboard Mouse SCSI` |
 | E7a | The veneer does not enumerate the floppy **when the boot path does not name it** | Full ARC dump (31 `dump_node` entries) with a floppy inserted and `bootpath` on the hard disk: exactly **one** `FloppyDiskPeripheral`, `Parent → CdromController` — the `fdisk(0)` tail of the CD path. Identical with and without a disk in the drive |
-| E7b | It **does** enumerate it when `bootpath` names it — but types it `other`, and `VrOpen` then fails | With `bootpath` = `/bandit/gc/swim3`: `FloppyDiskPeripheral` 1 → **2**, `DiskController` 1 → **2**. `find_boot_dev: bootpath (len 16) '/bandit/gc/swim3'` → `find_boot_dev: bootpath 'multi(0)other(0)other(0)'` → `Booting from 'multi(0)other(0)other(0)'` → `VrOpen: Entry - Path: multi(0)other(0)other(0)` → **`VrOpen returned 8`**. Eight is `EIO` on the ARC status ordering, corroborated by wall 22's `VrOpen returned d` = 13 = `ENODEV`. So the device is *found* and the I/O fails — not a missing device |
+| E7b | It **does** enumerate it when `bootpath` names it — but typed it `other`, and `VrOpen` then failed | `find_boot_dev: bootpath (len 16) '/bandit/gc/swim3'` → `find_boot_dev: bootpath 'multi(0)other(0)other(0)'` → `VrOpen returned 8` = `EIO`. Superseded by E13 |
 | E8 | The emulator models the hardware already | `ans500.c` declares `.floppy_slots = tnt_floppy_slots` ("Internal FD0", `FLOPPY_HD`); `tnt.c` binds SWIM3 to Grand Central and DBDMA. Insert works and survives `reset-all` |
 | E9 | `pe-loader` is the **only** NT-ROM-specific package | `ans-2.26NT` packages: deblocker, disk-label, obp-tftp, mac-files, mac-parts, aix-boot, fat-files, iso-9660-files, xcoff-loader, **pe-loader**, terminal-emulator. Plain `ans-1.1.22`: the same list **minus `pe-loader`**. `little-endian?` exists in both |
 | E10 | `nvramrc` exists on this firmware | `printenv` shows `use-nvramrc? false`, `auto-boot? true`, `boot-command boot`, and `nvramrc` |
+| **E11** | **The firmware loads the veneer off the floppy** | `mkcoldboot.py --veneer-dev /bandit/gc/swim3 --veneer-block 0x21`: sixteen `read-blocks` calls, then `init-program` → `Loading PE/COFF image_base 50000`, and the generated patch-site read-back finds all six ledger sites correct in guest memory. The floppy is a normal FAT12 disk at the same time — the veneer is `\PPC\VENEER.EXE`, contiguous from cluster 2 |
+| **E12** | **The veneer's own open of the drive needs the drive to have been opened once from the `0 >` prompt** | Same script, one line different. Without it: `NodeToPath returning '/bandit@F2000000/gc@10/swim3@15000'`, `OFOpen: IHandle: 0`, `VrOpen returned 8`. With `" /bandit/gc/swim3" open-dev` before `go`: `OFOpen: IHandle: ff8d3100`, `VrOpen: Exit`. It is **not** the path — typed at the prompt, `open-dev` answers that exact fully-qualified string with a valid ihandle (`-72C6C0`). The mechanism is not established; the correlation is. §2.1 never has to care, because reading the veneer off the drive opens it |
+| **E13** | **Ledger row 17 gives the drive the ARC name SETUPLDR uses** | `convert_name: node swim3 (780c) type 'block' is Class ControllerClass Type DiskController`, `add_new_child: parent swim3(0x780c) will get child fdisk Type FloppyDiskPeripheral`, `find_boot_dev: bootpath 'multi(0)disk(0)fdisk(0)'`. Before: `OtherController`, `OtherPeripheral`, `multi(0)other(0)other(0)` |
+| **E14** | **SETUPLDR contains a complete FAT reader** — R2 answered | 24 `Fat*` symbols in its table, from `IsFatFileStructure` and `FatOpen` to `FatLookupFatEntry` and `FatVboToLbo`. `IsFatFileStructure` reads 0x3E bytes at offset 0 and checks the jump byte (`EB`/`E9`), bytes-per-sector ∈ {0x80,0x100,0x200,0x400}, and a power-of-two cluster size — all of which `mkbootfloppy.py` writes |
+| **E15** | **A stock CD boots** | The user's own image, MD5 `ab37556d…`, attached and not written: `Booting from 'multi(0)scsi(0)cdrom(0)fdisk(0)\PPC\SETUPLDR'` → Setup's computer-type menu, the stock ten entries and `Other` |
+| **E16** | **Setup reads `txtsetup.oem` off the floppy and offers our computer type** | `Other` → *"Please insert the disk labeled Manufacturer-supplied hardware support disk into Drive A:"* → Enter → *"using a device support disk provided by the computer's manufacturer"* and a one-entry list: **Apple Network Server 500/700**. R4 answered |
+| **E17** | **Our HAL is loaded from the floppy, and Setup carries on** | `Setup is loading files (Apple Network Server 500/700)...` then Configuration Data, Setup Font, Locale, Windows NT Setup, PCMCIA, SCSI Port Driver, `Symbios Logic C810 PCI SCSI Host Adapter`, ESDI/IDE, NTFS, the Cirrus display, floppy, CD-ROM, SCSI disk, keyboard, FAT and CDFS — then `HAL: halshinr 0.1 … (phase 0)`, 54 memory descriptors, both 53C825As, `IoReadPartitionTable`, `C:`/`D:`/`E:`, and `system path -> 'E:\PPC'` |
 
-## 4. The blocker
+The **`\HALSHINR.DLL` at the root** detail is E17's other half: with the `[Disks]` directory
+field set to `\`, Setup asks for `\halshinr.dll`, so the OEM files live in the floppy's root and
+only `\PPC` mirrors the CD.
 
-**E7b is the whole problem, and it is one layer deeper than it first looked.**
+## 4. What was in the way
 
-The veneer is not blind to the drive. Point `/chosen bootpath` at `/bandit/gc/swim3` and it reads
-the property, adds a `DiskController` and a `FloppyDiskPeripheral` to its ARC tree, and derives a
-path for it. What it derives is **`multi(0)other(0)other(0)`** — it recognises Bandit SCSI and the
-CD-ROM and falls through to "other" for SWIM3 — and opening that path returns **`EIO`**.
+Two things, not one, and neither was what §4 first said.
 
-So the failure is *not* "the device does not exist". It is:
+### 4.1 The open — solved, and not by a patch
 
-1. a **device-type mapping gap** — SWIM3 is classified `other`, so the ARC name SETUPLDR would
-   expect (`multi(0)disk(0)fdisk(0)`) is never produced; and
-2. an **I/O path gap** — whatever `VrOpen` does to open that node fails, even though Open
-   Firmware itself reads the same drive perfectly (E2).
+E7b read as "`VrOpen` returns `EIO` on the drive", and the natural reading was that the veneer
+cannot do floppy I/O. It can. `VrOpen` has exactly one site that returns 8 (veneer `0x548C0`,
+`li r3,0x8`), reached only when `OFOpen` handed back a null ihandle — so the veneer gets all the
+way to an Open Firmware `open` on a correctly built path and *Open Firmware* declines. Open the
+drive once at the `0 >` prompt first and the same call succeeds (E12).
 
-The second is the surprising one and worth dwelling on: raw `read-blocks` through
-`/bandit/gc/swim3` returns the FAT12 boot sector byte for byte, so the capability is there and
-the veneer is not using it — or is using it in a way the `swim3` package does not answer.
+That is a fix in **our** boot script, not in Microsoft's binary — which is what §7's design rules
+ask for. §2.1 gets it for nothing, because the veneer is read off that drive.
 
-That makes the target much better defined than "teach the veneer about floppies", and it is now
-*traceable*: `VrDebug 0x760` prints `find_boot_dev`'s reasoning line by line, and `VrOpen`'s entry
-and exit, so the next person can watch exactly where `EIO` comes from rather than guessing.
+### 4.2 The ARC name — ledger row 17, six bytes
 
-It is still new behaviour inside a proprietary binary, which is what §7 weighs.
+`VrDebug` bit `0x0008` traces the OBP → ARC conversion, and it says exactly what happens:
 
-### 4.1 The experiment that produced E7b — **done, 15 September**
+```
+convert_name: node swim3 (780c) type 'block' is Class ControllerClass Type OtherController
+```
 
-Run as described: `mkcoldboot.py --veneer-dev /bandit/53c825@12/sd@0,0 --cd-dev /bandit/gc/swim3`,
-floppy inserted, `VrDebug` poked to `0x760` before `go`. The veneer is still loaded from the disk,
-so only the boot path is under test. Result above.
+`convert_name` classifies by Open Firmware `device_type` and `name`. `device_type` `block` gives
+`ControllerClass`; then the *name* decides — `disk` and `floppy` both give `DiskController`,
+`cdrom` gives `CdromController`, anything else falls through to `OtherController`. Apple's node
+is `device_type block`, `name swim3`, so it falls through, `convert_controller` hangs an
+`OtherPeripheral` off it, and the path is `multi(0)other(0)other(0)`.
 
-### 4.2 The next experiment
+The same string is read at all three places that matter: the classification, the `fdisk` child
+`convert_controller` adds to a `DiskController`, and the `convert_config` special case that calls
+`convert_config_floppy`. So renaming `floppy` → `swim3` in the image turns all three on at once
+and produces `multi(0)disk(0)fdisk(0)` — character for character the `multi(0)disk(0)fdisk(%d)`
+in SETUPLDR's own string table. Six bytes, `tools/mkveneer.py`, ledger row 17, ANS-only like
+every veneer patch.
 
-Find where `EIO` is raised. `VrOpen` is at veneer image `0x54744`–`0x5486c` (the range
-`mkveneer.py` already restores for wall 46), and the image has a full symbol table — 1,512
-symbols, readable with `tools/coffsyms.py` / `tools/coffdis.py`.
+An attempt to do this *without* patching the veneer — rewriting the node's `name` property from
+the firmware prompt — was tried first and does not work: `" floppy" encode-string " name"
+property` reports `ok`, and `dev /bandit/gc/floppy` then says `can't find device`. Open
+Firmware's path lookup does not follow a replaced `name`.
 
-**Use `VrDebug 0x1208`, not `0x760`.** Bit `0x0008` traces *the OBP → ARC device-tree
-conversion* — which is precisely where SWIM3 is classified `other` — and was not enabled in
-the run that produced E7b. With `0x0200` (`VrOpen`) and `0x1000` (`VrRead`) beside it you see
-the decision and the failed I/O in one pass. Appendix A has the full table.
-Two questions, in order:
+### 4.3 What is in the way now: wall 25
 
-* does `VrOpen` reach an Open Firmware call at all for an `other(0)other(0)` node, or does it
-  reject the type before trying?
-* if it calls, which method does it call — and does the `swim3` package implement it? OF answers
-  `read-blocks` on this device (E2) but has no `/swim3/disk` child (E1), so a veneer that expects
-  `disk-label` to interpose would find nothing to talk to.
+With both cleared, a stock CD gets all the way through NTOSKRNL's device initialisation and
+stops at
 
-The answer decides whether this is a small patch (map SWIM3 to `disk`/`fdisk`, use `read-blocks`
-directly) or confirmation that §7 is the honest route.
+```
+Setup has encountered a fatal error while initializing your computer's video.  (0, 0xc0000034)
+```
+
+That is **wall 25**, `STORY.md`'s oldest open item, and it has nothing to do with the floppy:
+`cirrus.sys` claims the legacy VGA aperture `0xA0000+0x20000`, which is ordinary RAM on this
+board, `VideoPortVerifyAccessRanges` reports the conflict, and no `\Device\Video0` is created.
+Every previous run that got past it did so with ledger row 6's bypass — a memory poke during
+text-mode Setup, or a one-word patch to `VIDEOPRT.SYS` on the *installed disk* during GUI Setup.
+Neither is available to a cold boot that applies no pokes, which is why this is the first place
+a poke-free run has ever reached it.
+
+**The fix that fits this plan is C7**: a `[Display]` class in `txtsetup.oem`, carrying a patched
+`VIDEOPRT.SYS` — plus `CIRRUS.SYS` and `CIRRUS.DLL`, which Setup will then take from the OEM disk
+rather than the CD. What that needs and what it costs is in §5.
 
 ## 5. What has to be built
 
-| # | component | what it is | depends on |
-|---|-----------|------------|-----------|
-| C1 | `tools/mkbootfloppy.py` | writes the 1.44 MB image: FAT12, `\PPC\SETUPLDR`, the patched veneer, `HALSHINR.DLL`, `I8042PRT.SYS`, `txtsetup.oem` | `mkveneer.py` (exists) |
-| C2 | `txtsetup.oem` | the OEM description: `[Disks]`, `[Defaults]`, `[Computer]` naming our HAL | E4; format confirmed, contents untested |
-| C3 | floppy-aware cold boot | `mkcoldboot.py --veneer-dev /bandit/gc/swim3`, reading `0x13C` blocks from block 0 | already parameterised (`--veneer-dev`) |
-| C4 | veneer SWIM3 **type mapping + `VrOpen` I/O**, or §7 | narrower than first written: enumeration already works (E7b); what is missing is the `disk`/`fdisk` classification and an open that does not return `EIO` | §4.2 |
-| C5 | our own ADB port driver | replaces maciNTosh's `usbadb.sys`, the last non-shippable piece | `entii-for-workcubes` `fpsidrv`; HAL half exists |
-| C6 | `nvramrc` installer | the §2 block as one line, so the machine boots the floppy unattended | E10; one-line form untested |
+| # | component | state |
+|---|-----------|-------|
+| C1 | `tools/mkbootfloppy.py` — the 1.44 MB image | **done**. Verified by an independent FAT reader and byte-compared against its inputs |
+| C2 | `txtsetup.oem` | **done for `Computer`** (E16, E17). The `[Keyboard]` class is written but was never exercised: Setup never asked, and no `Apple Desktop Bus keyboard` line appears in any log |
+| C3 | floppy-aware cold boot | **done** — `mkcoldboot.py --floppy`, `--veneer-dev`, `--veneer-block`; `--staging` is no longer required |
+| C4 | the drive's ARC identity and I/O | **done** — §4.1 (no patch) and §4.2 (ledger row 17) |
+| C5 | our own ADB port driver | not started. Replaces maciNTosh's `usbadb.sys`, the last non-shippable piece. `entii-for-workcubes` `fpsidrv`; the HAL half exists |
+| C6 | `nvramrc` installer | not started. The §2.1 block as one line, so the machine boots the floppy unattended. E10 says `nvramrc` exists; the one-line form is untested |
+| **C7** | **an OEM `[Display]` class** | **new, and now the blocker.** §4.3. Needs `VIDEOPRT.SYS`, `CIRRUS.SYS` and `CIRRUS.DLL` on the floppy, uncompressed, with row 6's one-word patch applied to `VIDEOPRT.SYS` and its PE checksum recomputed — NT rejects a driver whose checksum does not match (`STATUS_IMAGE_CHECKSUM_MISMATCH`). The files are compressed on the CD, so this also needs an SZDD/KWAJ expander, which this repo does not have. `mkbootfloppy.py` should take them as paths, like `--kbd`, so no Microsoft bytes are stored here |
 
 ## 6. Order of work
 
-1. ~~Run §4.1.~~ **Done** — the veneer enumerates the drive but names it `other(0)other(0)` and
-   `VrOpen` returns `EIO` (E7b). **Run §4.2 next**: find where `EIO` is raised. Nothing else is
-   worth starting until that is understood, because it decides C4 and therefore §7.
-2. **C1 + C2 + C3** — build the floppy and boot it far enough to see SETUPLDR loaded *from the
-   floppy*. Success is a `VrOpen` trace naming the floppy device, not the CD.
-3. **Get SETUPLDR to read `txtsetup.oem`** and load our HAL as the OEM `Computer`. Success is
-   Setup running with a HAL that never came off the disc. At this point the CD is pristine and
-   ledger row 8 is retired.
-4. **C5**, the ADB driver, which is what makes the floppy image redistributable.
-5. **C6**, `nvramrc`, which removes the remaining typing.
-6. Only then revisit the single-file/browser idea, which becomes a ~1.4 MB download.
+1. ~~Run §4.1 / §4.2 — find where `EIO` is raised.~~ **Done.** It is `OFOpen` returning a null
+   ihandle, and opening the drive once from the prompt fixes it (E12).
+2. ~~C1 + C2 + C3 — build the floppy and boot far enough to see SETUPLDR loaded from it.~~
+   **Done**, and better: the CD stayed stock and the floppy became the OEM disk (E15–E17).
+3. ~~Get SETUPLDR to read `txtsetup.oem` and load our HAL as the OEM `Computer`.~~ **Done.**
+   Ledger rows 8 and 10 are retired.
+4. **C7 next** — it is what stands between a stock CD and a completed install (§4.3).
+5. **C6**, `nvramrc`, which removes the typing.
+6. **C5**, the ADB driver, which is what makes the floppy image redistributable. Also the only
+   way to exercise C2's `[Keyboard]` class honestly.
+7. Only then revisit the single-file/browser idea, which becomes a ~1.4 MB download built from
+   the user's own CD.
 
 ## 7. Keeping the door open to other TNT models
 
@@ -267,48 +340,58 @@ hardest — is not ANS-specific at all.
 
 The consequence is blunt: **patching `VENEER.EXE` is structurally ANS-only.** The veneer is a
 file on the CD and travels fine, but without `pe-loader` nothing can lay it out or start it.
-Every hour spent on rows 1–5 buys nothing on an 8500.
+Every hour spent on rows 1–5 and 17 buys nothing on an 8500.
 
 What does travel is a **replacement ARC firmware** started through `xcoff-loader` (present
 everywhere) or via BootX from an HFS partition. maciNTosh's `arcbandit` is already that shape and
 already targets this chipset — `STORY.md` wall 26 records that its `pxi.c` / `adb_bus.c` /
 `adb_kbd.c` are for the hardware in front of us.
 
+**What this work leaves portable, and what it does not.** The split is now sharp, and it is
+better than it looked:
+
+* **Portable, and already built.** C1 (the FAT12 image), C2 (`txtsetup.oem`), C7, the HAL, and
+  eventually C5 are all *ours* and contain no veneer assumption. The OEM-disk mechanism is
+  SETUPLDR's, not the veneer's (E4, E5) — a replacement firmware only has to present the drive
+  as `multi(0)disk(0)fdisk(0)` and answer `VrOpen`/`VrSeek`/`VrRead` on it, which is the one
+  requirement §4.2 measured exactly.
+* **Not portable.** Ledger row 17, like rows 1–5. A replacement firmware classifies its own
+  devices and would simply name the drive correctly in the first place.
+
 **Design rules so this plan does not have to be redone:**
 
-* Keep everything that is *ours* free of veneer assumptions. C1, C2, C5 and the HAL are all
-  equally valid under a replacement firmware.
+* Keep everything that is *ours* free of veneer assumptions.
 * Treat the ARC path a device is reached by as a parameter, never a constant — `mkcoldboot.py`
-  already has `--veneer-dev` and `--cd-dev` for this reason.
+  has `--veneer-dev` and `--cd-dev` for this reason.
 * Prefer fixing a problem in *our* code over patching the veneer, even when the patch is
-  smaller. A veneer patch is a dead end outside the ANS.
-* If §4.1 says the veneer must be extended, weigh that against starting §7 instead: teaching a
-  proprietary binary to enumerate SWIM3 is work that cannot be reused, and a replacement
-  firmware would have to implement the same enumeration anyway — once, portably.
+  smaller. §4.1 is the case in point: the obvious reading of E7b was "extend the veneer", and
+  the answer was one line of firmware script.
 
 ## 8. Risks and open questions
 
-* **R1 — the blocker.** §4.1 answered: the veneer enumerates the drive but classifies it `other`
-  and `VrOpen` returns `EIO`. Whether that is a small patch or a wall depends on §4.2. The choice
-  remains veneer surgery (ANS-only) or §7 (large, portable), and it is what the plan hinges on.
-* **R2 — can SETUPLDR read FAT?** E3 shows it parses its boot device's filesystem itself. On a
-  floppy that is FAT12. `fastfat.sys` in its string table is a file it *loads*, not proof it
-  *contains* a reader. If it cannot, the floppy must present something it can read, or the boot
-  must stay on the CD and only the OEM disk move to the floppy.
-* **R3 — does `setupdd` re-read the OEM disk under NT?** E6's `\device\floppy0\txtsetup.oem` is
-  an NT path needing an NT driver, and no SWIM3 driver exists for NT. If that read is
-  unconditional, an NT-side SWIM3 driver becomes mandatory; if it is a fallback for classes
-  SETUPLDR already resolved, it may never happen. Answerable by disassembling around the string.
-* **R4 — OEM `Computer` semantics.** Whether `txtsetup.oem` can *replace* the HAL that
-  `TXTSETUP.SIF` names, or only add a menu entry, is untested.
+* ~~**R1 — the blocker.**~~ **Closed.** §4.1 and §4.2.
+* ~~**R2 — can SETUPLDR read FAT?**~~ **Closed.** It carries a complete FAT reader (E14), and it
+  read ours (E16).
+* **R3 — does `setupdd` re-read the OEM disk under NT?** E6's `\device\floppy0\txtsetup.oem`
+  is an NT path needing an NT driver, and no SWIM3 driver exists for NT. Not yet reached: the
+  run stops at wall 25 before `setupdd` would look. If that read is unconditional, an NT-side
+  SWIM3 driver becomes mandatory for the *install*, though not for text-mode Setup.
+* ~~**R4 — OEM `Computer` semantics.**~~ **Closed for `Computer`:** an OEM entry is offered on
+  its own, replaces the HAL that `TXTSETUP.SIF` names, and its files are read from the disk
+  (E16, E17). **Open for `Keyboard` and `Display`:** the `[Keyboard]` class in our
+  `txtsetup.oem` was never exercised, and `[Display]` is C7.
 * **R5 — nothing here has run on real hardware.** Every row in §3 is emulator evidence. The
-  tinkerdifferent threads show real ANS machines failing differently from ours.
+  tinkerdifferent threads show real ANS machines failing differently from ours. Two things in
+  particular are emulator-shaped: E12's open-once rule, and the floppy timing — a real SWIM3
+  takes seconds to read 316 sectors where this takes instants.
 * **R6 — `usbadb.sys` is not redistributable.** Until C5, the floppy image is as unshippable as
-  the patched ISO, and the main benefit is unrealised.
+  the patched ISO was, and the main benefit is unrealised. What *has* changed is that the CD no
+  longer has to be touched, which was the other half of the argument.
+* **R7 — the floppy is still derived from the user's CD.** `\PPC\VENEER.EXE` and
+  `\PPC\SETUPLDR` are Microsoft's, and C7 would add three more. The image is built on the
+  user's machine from the user's media; what we distribute is the builder.
 
-## 9. Three corrections worth carrying forward
-
-Both cost real time today and both were mine.
+## 9. Corrections worth carrying forward
 
 **A prefix-only signal reports "absent" and "never ran" identically.** Two experiments looked
 like findings and were infrastructure: the ARC-tree test that reported zero floppy nodes had a
@@ -325,19 +408,42 @@ the condition beside the result, especially when the result is a negative.
 
 **`bad address to DMA-MAP-IN` was my bug, twice.** `map-space` only exists inside
 `dev /packages/pe-loader`. Issued outside it, it is an unknown word, the buffer is never mapped,
-and the read fails in a way that looks exactly like a firmware limitation. The floppy reads
-perfectly once it is mapped — and the earlier conclusion that the CD cannot be read with
-`read-blocks` deserves re-testing for the same reason.
+and the read fails in a way that looks exactly like a firmware limitation.
+
+**"It returns `EIO`" is a symptom, not a location.** E7b named an error code and stopped, and the
+plan then spent a section weighing whether to teach a proprietary binary about floppies.
+`VrOpen` has *one* site that returns 8, and finding it took ten minutes of disassembly and said
+the veneer was already doing the right thing. Read the code that produces the error before
+planning around the error.
+
+**I asserted the drive had to stay open, and it does not.** `mkcoldboot.py` issues
+`diskih close-dev` after reading the veneer, which I had not checked when I wrote E12's first
+draft as "leave it open". What is measured is narrower: the drive must be opened *once* from the
+firmware prompt before `go`. Whether it may then be closed before the veneer's own first open is
+untested — SETUPLDR's much later open works fine after a close (E16).
+
+**The plan's own shape was wrong, and the evidence said so before I did.** §2 was written as
+"boot from the floppy", and E3 — SETUPLDR resolves everything against its boot device — was
+sitting in the evidence table saying that a floppy boot makes the floppy the install source.
+The arrangement that works uses the floppy for the two things it is actually good at, and leaves
+the CD as the boot device it already was.
 
 ## Appendix A — reference tables
 
-**`VrDebug`**, a word at veneer image `0x60C0C`. Poke it with the little-endian address munge:
-`machine.memory.poke.l 0x60c0c <value>`. Documented nowhere else we could find; the full table is
-in [`2026-09-07-booting-the-installed-disk.md`](2026-09-07-booting-the-installed-disk.md) §9.
+**`VrDebug`**, the veneer's trace mask. The variable is at image VA **`0x60C08`** — the TOC slot
+at `r2-32340` points at it, with `r2 = 0x691B8` — and you poke it at `0x60c0c`, because
+`poke.l A` writes the guest word at `A ^ 4`. Documented nowhere else we could find; the fuller
+table is in
+[`2026-09-07-booting-the-installed-disk.md`](2026-09-07-booting-the-installed-disk.md) §9.
+
+`debug(mask, fmt, …)` at `0x535FC` gates on `mask & VrDebug`, so every call site's first argument
+is its bit. Useful combinations: `0x0208` says why a device got the ARC type it got and whether
+the open succeeded; `0x0320` adds the path the veneer built.
 
 | bit | traces |
 |---|---|
 | `0x0001` | `VrGetChild`, `VrGetPeer`, `VrGetParent`, `VrGetComponent`, `VrGetConfigurationData` |
+| `0x0002` | the Open Firmware client-interface calls themselves — `OFOpen('%s')` and its siblings |
 | `0x0008` | **the OBP → ARC device-tree conversion** — where a device gets its ARC type |
 | `0x0010` | memory descriptors |
 | `0x0020` | `main`, `parse_args`, `find_boot_dev`, the boot file and OsLoader paths |
@@ -350,7 +456,9 @@ in [`2026-09-07-booting-the-installed-disk.md`](2026-09-07-booting-the-installed
 | `0x4000` | `VrGetEnvironmentVariable`, `VrSetEnvironmentVariable`, `GetEnvVar`, `FindInLocalEnv` |
 
 **ARC status codes**, in the order the ARC specification defines them — this is how `VrOpen
-returned 8` becomes `EIO`. Corroborated by wall 22, where `VrOpen returned d` (13) was `ENODEV`.
+returned 8` becomes `EIO`. Corroborated twice: by wall 22, where `VrOpen returned d` (13) was
+`ENODEV`, and by the code itself — `VrOpen` has one `li r3,0x8` (veneer `0x548C0`) and it is
+reached only when `OFOpen` returned a null ihandle, which is an I/O failure and nothing else.
 
 ```
  0 ESUCCESS   1 E2BIG   2 EACCES   3 EAGAIN   4 EBADF   5 EBUSY   6 EFAULT   7 EINVAL
@@ -379,6 +487,13 @@ Each of these cost at least one run.
   machine running in between.
 * **An inline `if` block must be one statement on one line.** Multi-line needs `{` last and `}`
   first on their lines.
+* **A `"` inside an `echo` label ends the label.** Typing a firmware line that contains an
+  Open Firmware string (`" /bandit/gc/swim3" open-dev`) and echoing it back as
+  `echo "OF[<line>]"` produces `expected binding name after '$'` two hundred lines later.
+  Escape the label separately from the text being typed.
+* **Only two cores.** Leaving a finished run's emulator alive halves the speed of the next one,
+  and three at once is worse than serial. `ps -eo pid,etimes,args | grep [g]s-headless` before
+  starting, and kill the orphans.
 
 ## Appendix C — glossary
 
@@ -391,5 +506,7 @@ Each of these cost at least one run.
 | **`setupdd.sys`** | the Setup driver that runs *after* NTOSKRNL, using NT I/O |
 | **HAL** | the Hardware Abstraction Layer — what this project builds, from source. Not a patch |
 | **miniport** | the hardware-specific half of an NT driver, sitting on a generic port driver (`scsiport`, `videoprt`). Stock Microsoft miniports drive this machine because the HAL answers their abstract questions |
+| **OEM disk** | Setup's own mechanism for hardware it does not know: pick `Other` at a class menu and it reads `txtsetup.oem` off a floppy. Not a patch, not a hack — the thing `TXTSETUP.SIF` editing was imitating |
+| **`txtsetup.oem`** | the INI file on that disk. `[Disks]` names it and says which directory its files are in, `[Computer]`/`[Keyboard]`/`[Display]`/`[SCSI]` offer entries, `[Files.<class>.<id>]` names the files |
 | **the ledger** | the table of workarounds at the end of [`../STORY.md`](../STORY.md): what each one is, why it is not a fix, and what a real fix would be |
-| **wall *n*** | a numbered obstacle in `STORY.md`'s narrative; the walls referenced here are 22, 26, 27, 46 and 52 |
+| **wall *n*** | a numbered obstacle in `STORY.md`'s narrative; the walls referenced here are 22, **25**, 26, 27, 46 and 52 |
