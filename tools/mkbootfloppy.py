@@ -306,6 +306,9 @@ def main():
                     help='the ADB keyboard/mouse driver, installed as USBADB.SYS and offered under '
                          'the SCSI prompt (S, Other) -- the only OEM class SETUPLDR loads more '
                          'than one driver for, and how maciNTosh delivers the same driver')
+    ap.add_argument('--boot-script', metavar='PATH',
+                    help='an Open Firmware Forth script, placed at \\BOOT.OF. What the user runs '
+                         'at the 0 > prompt instead of typing the layout by hand')
     ap.add_argument('--tag', metavar='PATH',
                     help="the distribution's media tag file, e.g. the CD's own CDROM_W.40, "
                          'placed in this disk\'s root under the same name. `[SourceDisksNames]` '
@@ -373,6 +376,12 @@ def main():
     # the user's disc: SETUPLDR has OEM prompts for SCSI, Computer and Display and none for the
     # keyboard, so `txtsetup.oem`'s `[Keyboard]` section is read by `setupdd.sys` under NT, long
     # after Setup needs a keyboard.  The root copy stays for the OEM-disk arrangement.
+    if a.boot_script:
+        data = read(a.boot_script)
+        c, _ = fs.alloc(data)
+        root.append(fs.dirent('BOOT.OF', c, len(data)))
+        print(f'  \\BOOT.OF   {len(data)} bytes')
+
     if a.tag:
         data = read(a.tag)
         c, _ = fs.alloc(data)

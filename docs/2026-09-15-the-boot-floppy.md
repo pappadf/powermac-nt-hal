@@ -431,6 +431,47 @@ Setup from Welcome through the hardware list to the licence agreement.
 **Ledger row 10 is retired** — for real this time. Row 9 is not: the driver is still maciNTosh's
 `usbadb.sys`, which we may run and may not redistribute, and C5 is still what fixes that.
 
+### 4.5 Getting the typing down to two lines — measured, not yet assembled
+
+C6 was written as "put the §2.1 block in `nvramrc`". There is a better answer, and four probes at
+the `0 >` prompt establish most of it. **Open Firmware can read and run a Forth script off the
+floppy itself:**
+
+* **`fd` is already a devalias** for `/bandit/gc/swim3`. No long path needed.
+* **`load fd:,\boot.of` works** — `loadsize` came back `1F`, exactly the 31-byte probe script.
+  The **comma is required**: `fd:\boot.of` fails `PARTITION is not a number`, because the text
+  after `:` is parsed as a partition number. The syntax is `device:partition,path`.
+* **`dir fd:,\` lists the floppy**, so the ROM's `fat-files` reads our FAT12 image directly.
+* **`load-base loadsize eval` runs the script** — printing `A-OK` and `C-OK` from a file that
+  contained a `."`, a `\` comment line, a colon definition and a call to it. So comments,
+  definitions and execution all work.
+* **Line endings must be CRLF.** The identical script with LF-only endings evaluated silently and
+  did nothing: the `\` comment runs to end of *line*, and with no CR the whole file is one
+  comment. This cost a run and would cost anyone else one.
+
+So the user types **two lines** instead of twenty-eight:
+
+```
+load fd:,\boot.of
+load-base loadsize eval
+```
+
+**The one thing still to settle** is where the script lands. `load` puts it at `load-base`, and
+§2.1 sets `load-base` to `3E00000` — which is exactly where the veneer is moved, so the script
+would overwrite itself part-way through being evaluated. Two candidate fixes, neither yet tested:
+
+1. leave the NVRAM `load-base` at its default `0x4000` (where the probe found it) so the script
+   lands clear of the veneer, and have the script do `3E00000 to load-base` before
+   `init-program` — this needs `to load-base` to work at runtime, which is unverified; or
+2. wrap the whole sequence in a colon definition so the text is consumed before any of it runs.
+   Definitions compile (proved above), but `dev`, `init-program` and `go` may be interpret-only.
+   `dev` is avoidable — `map-space` can be reached as a method,
+   `" /packages/pe-loader" open-dev` then `… " map-space" peih $call-method`, the same shape the
+   script already uses for `read-blocks`.
+
+`mkbootfloppy.py --boot-script` already places a file at `\BOOT.OF`; what it should contain is
+the above, once one of those two is settled.
+
 ## 5. What has to be built
 
 | # | component | state |
@@ -440,7 +481,8 @@ Setup from Welcome through the hardware list to the licence agreement.
 | C3 | floppy-aware cold boot | **done** — `mkcoldboot.py --floppy`, `--veneer-dev`, `--veneer-block`; `--staging` is no longer required |
 | C4 | the drive's ARC identity and I/O | **done** — §4.1 (no patch) and §4.2 (ledger row 17) |
 | C5 | our own ADB port driver | not started. Replaces maciNTosh's `usbadb.sys`, the last non-shippable piece. `entii-for-workcubes` `fpsidrv`; the HAL half exists |
-| C6 | `nvramrc` installer | not started. The §2.1 block as one line, so the machine boots the floppy unattended. E10 says `nvramrc` exists; the one-line form is untested |
+| C6 | the boot script on the floppy (was: `nvramrc`) | **most of the way there** (§4.5): `load fd:,\boot.of` + `load-base loadsize eval` is two lines instead of twenty-eight, and every word in it is verified. What is left is the `load-base` overlap. `nvramrc` on top would make it zero lines |
+| ~~C6-old~~ | ~~`nvramrc` installer~~ | not started. The §2.1 block as one line, so the machine boots the floppy unattended. E10 says `nvramrc` exists; the one-line form is untested |
 | **C7** | ~~an OEM display class~~ **done** | `--display-driver`, `--display-dll` and `--vga-aperture 0x90000000`. Wall 25 cleared with no poke anywhere (§4.3). Still ledger row 6 — it edits a Microsoft driver's data — but it is now the edit the ledger always asked for, and one an OEM disk can deliver |
 | **C8** | ~~the keyboard~~ **done** | `--adb-driver` offers it under `[SCSI]` (§4.4). Ledger row 10 retired |
 
