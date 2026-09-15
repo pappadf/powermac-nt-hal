@@ -256,7 +256,7 @@ Every row was measured on the emulator, not inferred.
 | **E14** | **SETUPLDR contains a complete FAT reader** — R2 answered | 24 `Fat*` symbols in its table, from `IsFatFileStructure` and `FatOpen` to `FatLookupFatEntry` and `FatVboToLbo`. `IsFatFileStructure` reads 0x3E bytes at offset 0 and checks the jump byte (`EB`/`E9`), bytes-per-sector ∈ {0x80,0x100,0x200,0x400}, and a power-of-two cluster size — all of which `mkbootfloppy.py` writes |
 | **E15** | **A stock CD boots** | The user's own image, MD5 `ab37556d…`, attached and not written: `Booting from 'multi(0)scsi(0)cdrom(0)fdisk(0)\PPC\SETUPLDR'` → Setup's computer-type menu, the stock ten entries and `Other` |
 | **E16** | **Setup reads `txtsetup.oem` off the floppy and offers our computer type** | `Other` → *"Please insert the disk labeled Manufacturer-supplied hardware support disk into Drive A:"* → Enter → *"using a device support disk provided by the computer's manufacturer"* and a one-entry list: **Apple Network Server 500/700**. R4 answered |
-| **E19** | **An OEM `[SCSI]` entry delivers the ADB keyboard driver** | `S` at the mass-storage screen, `Other`, our disk, and *"Apple Desktop Bus keyboard and mouse (via Cuda)"* is offered, chosen and loaded — `HAL: module usbadb.sys at 806e7000`. `i8042prt.sys` and `kbdclass.sys` still load from the CD alongside it; `Setup did not find a keyboard` never appears, and Setup reaches its Welcome screen. The SCSI class is the one SETUPLDR loads any number of drivers for, in a loop, without checking what they are |
+| **E19** | **An OEM `[SCSI]` entry delivers the ADB keyboard driver** | `S` at the mass-storage screen, `Other`, our disk, and *"Apple Desktop Bus keyboard and mouse (via Cuda)"* is offered, chosen and loaded — `HAL: module usbadb.sys at 806e7000`. `i8042prt.sys` and `kbdclass.sys` still load from the CD alongside it; `Setup did not find a keyboard` never appears, Setup reaches its Welcome screen, and two Enter presses **on the ADB keyboard** carry it to the licence agreement. The SCSI class is the one SETUPLDR loads any number of drivers for, in a loop, without checking what they are |
 | **E18** | **The boot medium is the source medium** | Booted from the floppy with its own `TXTSETUP.SIF`, SETUPLDR asks for the tag file `\CDROM_W.40` *in the drive it booted from*, and never looks at the CD — it re-prompts for ever. Give the floppy that tag and it accepts the floppy as the distribution and dies at `%SRR0: 00000000` when the files are not there |
 | **E17** | **Our HAL is loaded from the floppy, and Setup carries on** | `Setup is loading files (Apple Network Server 500/700)...` then Configuration Data, Setup Font, Locale, Windows NT Setup, PCMCIA, SCSI Port Driver, `Symbios Logic C810 PCI SCSI Host Adapter`, ESDI/IDE, NTFS, the Cirrus display, floppy, CD-ROM, SCSI disk, keyboard, FAT and CDFS — then `HAL: halshinr 0.1 … (phase 0)`, 54 memory descriptors, both 53C825As, `IoReadPartitionTable`, `C:`/`D:`/`E:`, and `system path -> 'E:\PPC'` |
 
@@ -421,6 +421,12 @@ Setup will load support for the following mass storage device(s):
 then loads it (`HAL: module usbadb.sys`), and the keyboard message never appears:
 
 ![Setup's Welcome screen, on a stock CD with everything ours on the floppy](../traces/2026-09-15-wall26-cleared-welcome.png)
+
+And it is a working keyboard, not just a detected one: two Enter presses typed on the **ADB
+keyboard** — `keyboard.down` / `keyboard.up` with guest time between them, the wall-57 rule — take
+Setup from Welcome through the hardware list to the licence agreement.
+
+![The licence agreement, reached by typing on the ADB keyboard](../traces/2026-09-15-wall26-adb-keyboard-drives-setup.png)
 
 **Ledger row 10 is retired** — for real this time. Row 9 is not: the driver is still maciNTosh's
 `usbadb.sys`, which we may run and may not redistribute, and C5 is still what fixes that.
