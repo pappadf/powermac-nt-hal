@@ -14,8 +14,9 @@ reaches a 7500/8500 later instead of being thrown away.*
 > on the emulator to text-mode Setup, is offered *Apple Network Server 500/700* as a computer
 > type, loads this project's HAL off the floppy, brings up the Cirrus through `cirrus.sys` and
 > `videoprt`, and stops at the keyboard — **with no poke, breakpoint or patched CD anywhere in
-> the run**. Ledger rows 8 and 10 are retired; wall 25, the oldest open item, is cleared, and
-> §4.3 says why it was never what the notes said it was.
+> the run**. Ledger row 8 is retired and wall 25, the oldest open item, is cleared (§4.3 says why
+> it was never what the notes said it was). **Row 10 is not retired**: §4.4 is why, and what it
+> needs instead.
 >
 > The floppy is **not** the boot device. The firmware reads the veneer off it as raw blocks
 > before anything is running, then boots the CD; Setup meets the floppy again later, as its
@@ -136,7 +137,7 @@ And it retires the two ledger rows that existed *because* we edited the disc:
 |-----|------|--------|
 | 7 | ~~HAL delivered by overwriting `HALEAGLE.DLL`~~ | retired earlier, by `mkoem.py` |
 | 8 | ~~`TXTSETUP.SIF` and `\PPC` directory patches applied to a user's CD~~ | **retired here** — Setup takes the HAL from the OEM disk instead [E16][E17] |
-| 10 | ~~the keyboard driver written over `\PPC\I8042PRT.SYS`~~ | **retired here** — it is a file on the OEM disk, named by `txtsetup.oem` |
+| 10 | the keyboard driver written over `\PPC\I8042PRT.SYS` | **not retired — I claimed it was and I was wrong.** SETUPLDR has no keyboard OEM class at all (§4.4), so the copy on the floppy is never read |
 
 Rows 1–5 (the veneer patches) are *not* retired by a floppy, and this work added row 17 to them.
 They are retired by §7.
@@ -204,21 +205,26 @@ read files with.
 ### 2.2 The other arrangement: boot *from* the floppy
 
 Point `bootpath` at the drive instead and the veneer loads `\PPC\SETUPLDR` off the floppy — the
-shape this document originally proposed. It works as far as SETUPLDR's own screens, and stops
-where NT's x86 boot-floppy set would expect a `txtsetup.sif` on the boot medium, which we do not
-put there:
+shape this document originally proposed. It now goes further than §4.3's run, and far enough to
+settle what it is worth:
 
-```
-INF file txtsetup.sif is corrupt or missing.
-```
+* With `\PPC\TXTSETUP.SIF` on the floppy, SETUPLDR reads its INF from the floppy and gets past
+  `INF file txtsetup.sif is corrupt or missing`.
+* It then asks for **the disk labeled `Windows NT Workstation CD-ROM`**, which it identifies by
+  the tag file `\CDROM_W.40` that `[SourceDisksNames]` names — and it looks for it **on the
+  device it booted from**, not on the CD sitting in the SCSI drive. Pressing Enter re-prompts
+  for ever.
+* Put a copy of that tag file in the floppy's root and Setup accepts the floppy *as the
+  distribution* — and dies immediately, `DEFAULT CATCH!, code=FFF00700 at %SRR0: 00000000`,
+  because the files it then wants are not there.
 
-That is a *good* error. It means the floppy was opened, the FAT12 filesystem was read, and
-SETUPLDR knew which file it wanted — before row 17 the same run said
-`The file multi(0)other(0)other(0) is corrupted.` [E14]. §2.1 is better in every way for an ANS,
-so this is kept only because §7 may want it: a replacement ARC firmware on a 7500/8500 has no CD
-to boot from until it can read one.
+**So the boot medium is the source medium** [E18]. That is the fact that decides this
+arrangement: a 1.44 MB floppy cannot be NT's text-mode source. `setupdd.sys` alone is 299 KB,
+`ntfs.sys` 594 KB and the kernel 1.3 MB.
 
-Booting from the floppy needs one extra thing §2.1 gets for free — see E12.
+It is kept because §7 may want it, and because the next medium up — a small FAT partition on the
+disk the user is installing to, built from their own CD, with the CD still never written — would
+have the same shape and none of the size problem. That is what §4.4 leaves for whoever is next.
 
 ## 3. What we have actually verified
 
@@ -243,6 +249,7 @@ Every row was measured on the emulator, not inferred.
 | **E14** | **SETUPLDR contains a complete FAT reader** — R2 answered | 24 `Fat*` symbols in its table, from `IsFatFileStructure` and `FatOpen` to `FatLookupFatEntry` and `FatVboToLbo`. `IsFatFileStructure` reads 0x3E bytes at offset 0 and checks the jump byte (`EB`/`E9`), bytes-per-sector ∈ {0x80,0x100,0x200,0x400}, and a power-of-two cluster size — all of which `mkbootfloppy.py` writes |
 | **E15** | **A stock CD boots** | The user's own image, MD5 `ab37556d…`, attached and not written: `Booting from 'multi(0)scsi(0)cdrom(0)fdisk(0)\PPC\SETUPLDR'` → Setup's computer-type menu, the stock ten entries and `Other` |
 | **E16** | **Setup reads `txtsetup.oem` off the floppy and offers our computer type** | `Other` → *"Please insert the disk labeled Manufacturer-supplied hardware support disk into Drive A:"* → Enter → *"using a device support disk provided by the computer's manufacturer"* and a one-entry list: **Apple Network Server 500/700**. R4 answered |
+| **E18** | **The boot medium is the source medium** | Booted from the floppy with its own `TXTSETUP.SIF`, SETUPLDR asks for the tag file `\CDROM_W.40` *in the drive it booted from*, and never looks at the CD — it re-prompts for ever. Give the floppy that tag and it accepts the floppy as the distribution and dies at `%SRR0: 00000000` when the files are not there |
 | **E17** | **Our HAL is loaded from the floppy, and Setup carries on** | `Setup is loading files (Apple Network Server 500/700)...` then Configuration Data, Setup Font, Locale, Windows NT Setup, PCMCIA, SCSI Port Driver, `Symbios Logic C810 PCI SCSI Host Adapter`, ESDI/IDE, NTFS, the Cirrus display, floppy, CD-ROM, SCSI disk, keyboard, FAT and CDFS — then `HAL: halshinr 0.1 … (phase 0)`, 54 memory descriptors, both 53C825As, `IoReadPartitionTable`, `C:`/`D:`/`E:`, and `system path -> 'E:\PPC'` |
 
 The **`\HALSHINR.DLL` at the root** detail is E17's other half: with the `[Disks]` directory
@@ -351,6 +358,39 @@ Three things this cost that are worth stating once:
    first investigation concluded. The code that produces it says otherwise in about forty
    instructions.
 
+### 4.4 What is in the way now: the keyboard, and it needs a bigger medium
+
+Past video, Setup asks the next question and it is **wall 26**: *"Setup did not find a keyboard
+connected to your computer."* It is right — the keyboard is ADB behind Cuda, and the CD's
+`i8042prt.sys` probes a port `0x60` this machine does not have.
+
+This project solved that months ago by writing maciNTosh's driver over the CD's
+`\PPC\I8042PRT.SYS` (ledger row 10) — which is exactly what this plan set out to stop doing.
+The floppy carries that driver and a `[Keyboard]` class for it. **Setup never reads either**, and
+the reason is structural:
+
+* **SETUPLDR has OEM prompts for SCSI, Computer and Display, and none for the keyboard.** There
+  are exactly two `SlLoadOemDriver` call sites in the whole loader — one for SCSI, in a loop over
+  a list, and one for video. `SlPromptOemHal` has none at all: the Computer class contributes the
+  HAL and nothing else. `txtsetup.oem`'s `[Keyboard]` section belongs to `setupdd.sys`, which
+  runs under NT — long after Setup has demanded a keyboard, and behind an NT floppy driver that
+  does not exist (R3).
+* **So the keyboard driver has to come from the medium Setup booted from**, by the name SETUPLDR
+  hardcodes. On a stock CD that is the CD's own file.
+* **And the boot medium is the source medium** (§2.2, E18) — so making the floppy the boot
+  device does not help either: Setup then wants the whole text-mode file set on it.
+
+That leaves one shape that fits: **a boot medium we control that is also large enough to be
+Setup's source.** A small FAT partition on the SCSI disk the user is installing to would be
+exactly that — `mkarcdisk.py` already creates the ARC system partition next to it, the text-mode
+set is a few megabytes, and the CD is still never written. The floppy work is not wasted: the
+veneer, the HAL, `txtsetup.oem` and the OEM `Computer`/`Display` classes all move across
+unchanged, because none of them depends on the medium being a floppy.
+
+It is worth saying plainly that this is further than the plan expected to get and a different
+answer than it expected to give. Rows 8 and 10 were both written as "retired by this plan". Row
+8 is. **Row 10 is not**, and an earlier version of this document said it was.
+
 ## 5. What has to be built
 
 | # | component | state |
@@ -362,7 +402,7 @@ Three things this cost that are worth stating once:
 | C5 | our own ADB port driver | not started. Replaces maciNTosh's `usbadb.sys`, the last non-shippable piece. `entii-for-workcubes` `fpsidrv`; the HAL half exists |
 | C6 | `nvramrc` installer | not started. The §2.1 block as one line, so the machine boots the floppy unattended. E10 says `nvramrc` exists; the one-line form is untested |
 | **C7** | ~~an OEM display class~~ **done** | `--display-driver`, `--display-dll` and `--vga-aperture 0x90000000`. Wall 25 cleared with no poke anywhere (§4.3). Still ledger row 6 — it edits a Microsoft driver's data — but it is now the edit the ledger always asked for, and one an OEM disk can deliver |
-| C8 | the `[Keyboard]` class, exercised | the floppy already carries the driver and the section; Setup has never asked for it. This is where the run now stops, and C5 is what makes it shippable |
+| **C8** | **a boot medium big enough to be Setup's source** | **the blocker** (§4.4). A small FAT partition on the install disk, carrying `SETUPLDR`, `TXTSETUP.SIF`, the media tag and the text-mode driver set copied from the user's own CD — including our `\PPC\I8042PRT.SYS`, which is the only way an ADB keyboard reaches text-mode Setup without writing to the disc. `mkarcdisk.py` already builds the partition next door; everything the floppy carries moves across unchanged |
 
 ## 6. Order of work
 
@@ -374,8 +414,8 @@ Three things this cost that are worth stating once:
    Ledger rows 8 and 10 are retired.
 4. ~~C7 — the display.~~ **Done**, and wall 25 with it (§4.3). A stock CD now reaches Setup's
    keyboard question with no poke anywhere.
-5. **C8 next** — get Setup to take the ADB keyboard driver off the OEM disk, which is the wall
-   the run now stops at and the last thing the patched CD was still doing for us.
+5. **C8 next** — the keyboard, which needs a boot medium that can also be the source (§4.4).
+   Nothing smaller will do: it is not a missing option, it is SETUPLDR's structure.
 6. **C6**, `nvramrc`, which removes the typing.
 7. **C5**, our own ADB driver, which is what makes the floppy image redistributable.
 8. Only then revisit the single-file/browser idea, which becomes a ~1.4 MB download built from

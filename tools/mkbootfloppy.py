@@ -278,6 +278,18 @@ def main():
     ap.add_argument('--veneer', required=True, help='VENEER.EXE, already patched by mkveneer.py')
     ap.add_argument('--setupldr', required=True, help="PPC/SETUPLDR from the user's CD")
     ap.add_argument('--hal', required=True, help='build/hal.dll — installed as HALSHINR.DLL')
+    ap.add_argument('--tag', metavar='PATH',
+                    help="the distribution's media tag file, e.g. the CD's own CDROM_W.40, "
+                         'placed in this disk\'s root under the same name. `[SourceDisksNames]` '
+                         'in TXTSETUP.SIF identifies each source medium by such a file, and a '
+                         'floppy boot stops asking for "the disk labeled Windows NT Workstation '
+                         "CD-ROM\" once it finds one. Experimental: it makes Setup treat this "
+                         'disk as the distribution, which a 1.44 MB disk is not')
+    ap.add_argument('--sif', help="the CD's PPC/TXTSETUP.SIF, placed at \\PPC\\TXTSETUP.SIF. Only "
+                                  'needed to boot *from* the floppy (the plan\'s section 2.2): '
+                                  'SETUPLDR reads its INF from the device it booted from, and '
+                                  'without one it stops at "INF file txtsetup.sif is corrupt or '
+                                  'missing". Not needed for the OEM-disk arrangement of 2.1')
     ap.add_argument('--kbd', help='the driver installed as I8042PRT.SYS (optional while C5 is open)')
     ap.add_argument('--display-driver', help='the display miniport, installed as CIRRUS.SYS')
     ap.add_argument('--display-dll', help='the display DLL, installed as CIRRUS.DLL')
@@ -311,6 +323,7 @@ def main():
     ppc = [fs.dirent('VENEER.EXE', vcluster, len(veneer))]
     root = []
     for name, path, where in (('SETUPLDR', a.setupldr, ppc),
+                              ('TXTSETUP.SIF', a.sif, ppc),
                               ('HALSHINR.DLL', a.hal, root),
                               ('I8042PRT.SYS', a.kbd, root),
                               ('CIRRUS.SYS', a.display_driver, root),
@@ -325,6 +338,24 @@ def main():
         where.append(fs.dirent(name, c, len(data)))
 
     display = bool(a.display_driver and a.display_dll)
+    # Booting *from* the floppy means SETUPLDR resolves `\\PPC\\I8042PRT.SYS` -- the name it
+    # hardcodes for the keyboard port driver -- on this device rather than on the CD.  That is
+    # the only route by which an ADB keyboard driver reaches text-mode Setup without writing to
+    # the user's disc: SETUPLDR has OEM prompts for SCSI, Computer and Display and none for the
+    # keyboard, so `txtsetup.oem`'s `[Keyboard]` section is read by `setupdd.sys` under NT, long
+    # after Setup needs a keyboard.  The root copy stays for the OEM-disk arrangement.
+    if a.tag:
+        data = read(a.tag)
+        c, _ = fs.alloc(data)
+        root.append(fs.dirent(os.path.basename(a.tag).upper(), c, len(data)))
+        print(f'  \\{os.path.basename(a.tag).upper()}   media tag, {len(data)} bytes')
+
+    if a.sif and a.kbd:
+        data = read(a.kbd)
+        c, _ = fs.alloc(data)
+        ppc.append(fs.dirent('I8042PRT.SYS', c, len(data)))
+        print('  \\PPC\\I8042PRT.SYS   a second copy, for booting from this disk')
+
     oem = read(a.oem) if a.oem else txtsetup_oem(display).encode('ascii')
     oc, _ = fs.alloc(oem)
 
