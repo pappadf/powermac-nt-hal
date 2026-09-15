@@ -8,6 +8,93 @@ adds — the HAL, the veneer's seven patch sites, the ADB keyboard driver — mo
 and the CD is used unmodified, as pressed. Targeting the Apple Network Server first, but built so
 the same work reaches a 7500/8500 later instead of being thrown away.*
 
+## 0. Before you start
+
+This assumes nothing except a checkout. Read [`EMULATOR.md`](EMULATOR.md) first — it is the
+step-by-step emulator setup — and [`CHARTER.md` §3.1](CHARTER.md#31-replicating-it) for what you
+must supply yourself. In short:
+
+| you need | notes |
+|---|---|
+| Granny Smith, branch `ppc-le-mode-and-bandit-lane-reversal` | **not `main`** — little-endian mode, Bandit lane reversal and the Cirrus id registers are unmerged. `make headless` |
+| An ANS Open Firmware ROM | `ans-2.26NT`, MD5 `ad405e01c663340c479668c70f741f1b`. The **NT** ROM: §7 explains why that matters |
+| An NT 4.0 Workstation PowerPC CD | OEM 000-48303, MD5 `ab37556d72818ed082c1d01c2d7f1898`. Work on a copy |
+| This repo | `make` → `build/hal.dll` |
+
+Neither the ROM nor the CD is in any repository, and neither may be redistributed.
+
+### 0.1 Running an experiment
+
+Everything below is a Granny Smith shell script (`.gs`) fed to the emulator. Two ways to run one:
+
+```bash
+# one-shot: builds a machine, runs the script, exits.  No daemon needed.
+R=<path to the ANS ROM>
+./build/headless/gs-headless --speed=turbo --no-prompt -q \
+    rom=$R --var ROM=$R --checkpoint-dir=tmp/ckpt script=tmp/my.gs > tmp/my.log 2>&1
+
+# against a long-lived daemon (needed by tools/run-boot.py, which splices a disk image)
+./build/headless/gs-headless --daemon --port=6820 --speed=turbo --no-prompt -q \
+    --checkpoint-dir=tmp/ckpt-daemon rom=$R --var ROM=$R &
+python3 tools/gsh.py 'echo alive'
+```
+
+`--var ROM=` matters as well as `rom=`: the boot helper re-reads `$ROM` when it restarts the
+machine to apply a console change.
+
+### 0.2 Generating the scripts
+
+```bash
+# a cold boot from power-on to Setup: no pokes, no breakpoints, no checkpoint
+python3 tools/mkcoldboot.py --rom $R --cd <patched.iso> --staging <disk.img> \
+        --out tmp/cold.gs --screenshot tmp/cold.png --chunks 1400
+#   --veneer-dev / --cd-dev   the Open Firmware paths for the veneer source and the boot device
+#   --console screen          type on the ADB keyboard instead of the serial port (see §9)
+
+# the veneer, with ledger rows 1-5 applied as bytes rather than pokes
+python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer.exe --for cd \
+        --stage <disk.img>@0x800
+
+# a whole patched CD + a staging image, from a pristine disc
+python3 tools/mkpatchediso.py <NT.iso> tmp/out.iso --hal build/hal.dll \
+        --kbd <i8042prt replacement> --staging tmp/staging.img
+```
+
+### 0.3 The artifacts these experiments used
+
+None are in git; all are reproducible.
+
+| artifact | what | how to make it |
+|---|---|---|
+| `tmp/nt-one.iso` | patched CD | `mkpatchediso.py` (above) |
+| `tmp/nt-onedisk.img` | 512 MB disk: ARC system partition at LBA 4096, **and the veneer at block `0x800`** in the gap before it | `mkarcdisk.py --part 4096:65536 --part 69632:0` then `mkpatchediso.py --veneer-into` |
+| `tmp/oem-floppy.img` | 1.44 MB FAT12 floppy | below |
+| `tmp/nt-pre-go-big2.ckpt` | pre-`go` checkpoint | expensive; `mkcoldboot.py` makes it largely unnecessary. **Invalidated by any emulator rebuild** — `tools/restamp-ckpt.py <gs-headless> <ckpt>` fixes that when the rebuild changed no checkpointed structure |
+
+```python
+# tmp/oem-floppy.img — a plain FAT12 floppy, enough for the firmware to read
+import struct
+img = bytearray(b'\x00' * 1474560); bs = bytearray(512)
+bs[0:3] = b'\xeb\x3c\x90'; bs[3:11] = b'MSDOS5.0'
+struct.pack_into('<HBHBHHBHHHII', bs, 11, 512,1,1,2,224,2880,0xF0,9,18,2,0,0)
+bs[38] = 0x29; bs[43:54] = b'NTOEMDISK  '; bs[54:62] = b'FAT12   '; bs[510:512] = b'\x55\xaa'
+img[0:512] = bs; img[512] = 0xF0; img[513] = 0xFF; img[514] = 0xFF
+open('tmp/oem-floppy.img','wb').write(bytes(img))
+```
+
+### 0.4 The one command that reproduces the blocker
+
+```bash
+python3 tools/mkcoldboot.py --rom $R --cd tmp/nt-one.iso --staging tmp/nt-onedisk.img \
+    --veneer-dev /bandit/53c825@12/sd@0,0 --cd-dev /bandit/gc/swim3 \
+    --out tmp/fd.gs --chunks 500
+# then, in tmp/fd.gs: insert the floppy after the attach lines, and before `go` add
+#     machine.memory.poke.l 0x60c0c 0x00000760      (VrDebug: see Appendix A)
+# run it, then:
+grep -c FloppyDiskPeripheral tmp/fd.log        # 2 with bootpath on the floppy, 1 without
+grep -oE "find_boot_dev:[^\\]*|VrOpen returned [0-9]+" tmp/fd.log
+```
+
 ## 1. Why
 
 The deliverable today is a 578 MB ISO with 126 KB overwritten. It works, it is verified, and it
@@ -128,8 +215,13 @@ so only the boot path is under test. Result above.
 ### 4.2 The next experiment
 
 Find where `EIO` is raised. `VrOpen` is at veneer image `0x54744`–`0x5486c` (the range
-`mkveneer.py` already restores for wall 46), the image has a full symbol table — 1,512 symbols,
-readable with `tools/coffsyms.py` / `tools/coffdis.py` — and `VrDebug 0x200` traces the I/O path.
+`mkveneer.py` already restores for wall 46), and the image has a full symbol table — 1,512
+symbols, readable with `tools/coffsyms.py` / `tools/coffdis.py`.
+
+**Use `VrDebug 0x1208`, not `0x760`.** Bit `0x0008` traces *the OBP → ARC device-tree
+conversion* — which is precisely where SWIM3 is classified `other` — and was not enabled in
+the run that produced E7b. With `0x0200` (`VrOpen`) and `0x1000` (`VrRead`) beside it you see
+the decision and the failed I/O in one pass. Appendix A has the full table.
 Two questions, in order:
 
 * does `VrOpen` reach an Open Firmware call at all for an `other(0)other(0)` node, or does it
@@ -236,3 +328,68 @@ the condition beside the result, especially when the result is a negative.
 and the read fails in a way that looks exactly like a firmware limitation. The floppy reads
 perfectly once it is mapped — and the earlier conclusion that the CD cannot be read with
 `read-blocks` deserves re-testing for the same reason.
+
+## Appendix A — reference tables
+
+**`VrDebug`**, a word at veneer image `0x60C0C`. Poke it with the little-endian address munge:
+`machine.memory.poke.l 0x60c0c <value>`. Documented nowhere else we could find; the full table is
+in [`2026-09-07-booting-the-installed-disk.md`](2026-09-07-booting-the-installed-disk.md) §9.
+
+| bit | traces |
+|---|---|
+| `0x0001` | `VrGetChild`, `VrGetPeer`, `VrGetParent`, `VrGetComponent`, `VrGetConfigurationData` |
+| `0x0008` | **the OBP → ARC device-tree conversion** — where a device gets its ARC type |
+| `0x0010` | memory descriptors |
+| `0x0020` | `main`, `parse_args`, `find_boot_dev`, the boot file and OsLoader paths |
+| `0x0040` | the `Vr*Initialize` phases, `select_boot`, `choose_args` |
+| `0x0100` | `ArcPathToNode`, `NodeToPath` |
+| `0x0200` | `VrOpen`, `VrClose`, `VrMount`, `VrGetFileInformation`, `VrGetDirectoryEntry` |
+| `0x0800` | `VrLoad` |
+| `0x1000` | `VrRead`, `VrWrite`, `VrSeek`, `VrGetReadStatus` |
+| `0x2000` | `Argv[n]` — the argv actually handed to the loader |
+| `0x4000` | `VrGetEnvironmentVariable`, `VrSetEnvironmentVariable`, `GetEnvVar`, `FindInLocalEnv` |
+
+**ARC status codes**, in the order the ARC specification defines them — this is how `VrOpen
+returned 8` becomes `EIO`. Corroborated by wall 22, where `VrOpen returned d` (13) was `ENODEV`.
+
+```
+ 0 ESUCCESS   1 E2BIG   2 EACCES   3 EAGAIN   4 EBADF   5 EBUSY   6 EFAULT   7 EINVAL
+ 8 EIO        9 EISDIR 10 EMFILE  11 EMLINK  12 ENAMETOOLONG     13 ENODEV  14 ENOENT
+15 ENOEXEC   16 ENOMEM 17 ENOSPC  18 ENOTDIR 19 ENOTTY 20 ENXIO  21 EROFS   22 EMAXIMUM
+```
+
+## Appendix B — traps in the emulator's script language
+
+Each of these cost at least one run.
+
+* **`$` in a line typed at the firmware is spliced as a shell binding.** `$call-method` becomes
+  `$ca` and the line dies. Escape it: `\$call-method`.
+* **Wait for the prompt `0 > `, not for `" ok"`.** The firmware's narration is full of `ok`, and
+  so is whatever is still in the receive buffer, so a wait on `" ok"` returns instantly and the
+  next stage is typed into a machine that is still rebooting. Drain the buffer first.
+* **`map-space` only exists inside `dev /packages/pe-loader`.** Outside it the word is unknown,
+  the buffer is never mapped, and the read fails `bad address to DMA-MAP-IN` — which reads
+  exactly like a firmware limitation and is not one.
+* **`machine.memory.poke.l A` writes the guest word at `A ^ 4`**, and `poke.b A` the guest byte at
+  `A ^ 7` — the 604's little-endian address munge. `DAR` and blue-screen addresses are munged too.
+* **`screen.checksum()` with no arguments hashes `stride × height`**, including off-screen video
+  memory the display driver uses as scratch. It churns while the picture is still. Pass the
+  visible region.
+* **The SCC receive FIFO holds about sixteen characters.** Type long lines four at a time with the
+  machine running in between.
+* **An inline `if` block must be one statement on one line.** Multi-line needs `{` last and `}`
+  first on their lines.
+
+## Appendix C — glossary
+
+| term | meaning |
+|---|---|
+| **veneer** (`\PPC\VENEER.EXE`) | Microsoft's ARC firmware shim, a file *on the NT CD*. Translates NT's ARC firmware interface into Open Firmware calls. Not part of the ROM, not part of NT |
+| **ARC** | the Advanced RISC Computing firmware standard NT expects: a device tree, paths like `multi(0)scsi(0)cdrom(0)fdisk(0)`, and environment variables |
+| **`pe-loader`** | an Open Firmware package that relocates and starts a PE/COFF client program. **Only in the NT ROM** — see §7 |
+| **SETUPLDR** | NT's text-mode Setup loader. Runs before the kernel, does all its I/O through ARC, and parses its boot device's filesystem itself |
+| **`setupdd.sys`** | the Setup driver that runs *after* NTOSKRNL, using NT I/O |
+| **HAL** | the Hardware Abstraction Layer — what this project builds, from source. Not a patch |
+| **miniport** | the hardware-specific half of an NT driver, sitting on a generic port driver (`scsiport`, `videoprt`). Stock Microsoft miniports drive this machine because the HAL answers their abstract questions |
+| **the ledger** | the table of workarounds at the end of [`../STORY.md`](../STORY.md): what each one is, why it is not a fix, and what a real fix would be |
+| **wall *n*** | a numbered obstacle in `STORY.md`'s narrative; the walls referenced here are 22, 26, 27, 46 and 52 |
