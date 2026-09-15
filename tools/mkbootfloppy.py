@@ -282,6 +282,97 @@ driver = d1, usbadb.sys, usbadb
 """
 
 
+# ---- the Open Firmware boot script ------------------------------------------------------------
+#
+# What the user runs instead of typing the layout by hand:
+#
+#     0 > load fd:,\boot.of
+#     0 > load-base loadsize eval
+#
+# Two lines, and `fd` is a devalias the ROM already ships.  The comma matters: `fd:\boot.of`
+# fails `PARTITION is not a number`, because Open Firmware parses what follows `:` as a
+# partition number -- the syntax is device:partition,path.
+#
+# Three things about this file are load-bearing and were each measured at the 0 > prompt:
+#
+#  * **CRLF line endings.**  `\` comments run to end of *line*; with LF only, Open Firmware never
+#    sees a line end and swallows the whole file as one comment.  It evaluates in silence and
+#    does nothing, which looks exactly like `eval` not working.
+#  * **Everything is wrapped in one colon definition.**  `load` puts this text at `load-base`,
+#    which is 3E00000 here -- the very address the veneer is moved to.  Compiling first and
+#    running afterwards means the text has already been consumed when the move destroys it, and
+#    `go` never returns to read more.  Setting `load-base` elsewhere is not an option:
+#    `3E00000 to load-base` answers `invalid use of TO`.
+#  * **`map-space` is called as a method, not through `dev`.**  `dev` is interpret-only, and
+#    `map-space` exists only inside `/packages/pe-loader`; `" map-space" pe $call-method` reaches
+#    it from inside a definition, which is the same shape the read already uses.
+CHUNK = 0x20                     # blocks per read-blocks call, as the firmware's own transcript does
+
+
+def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev,
+                stage=0x3D00000, load=0x3E00000):
+    L = ['\\ powermac-nt-hal -- start Windows NT Setup on an Apple Network Server 500/700',
+         '\\',
+         '\\ Run this at the 0 > prompt with:',
+         '\\     load fd:,\\boot.of',
+         '\\     load-base loadsize eval',
+         '\\',
+         '\\ Everything below is Open Firmware\'s own; nothing is patched at run time.  The veneer',
+         '\\ on this disk already carries its patches as bytes.',
+         '',
+         '0 value nt-pe',
+         '0 value nt-fd',
+         '',
+         ': nt-boot',
+         f'   " /packages/pe-loader" open-dev to nt-pe',
+         f'   {stage:X} {veneer_bytes:X} " map-space" nt-pe $call-method',
+         f'   " {fd_dev}" open-dev to nt-fd']
+    addr, blk, left = stage, veneer_block, veneer_blocks
+    while left > 0:
+        n = min(CHUNK, left)
+        L.append(f'   {addr:X} {blk:X} {n:X} " read-blocks" nt-fd $call-method drop')
+        addr += n * 512
+        blk += n
+        left -= n
+    L += ['   nt-fd close-dev',
+          f'   {load:X} {veneer_bytes:X} " map-space" nt-pe $call-method',
+          f'   {stage:X} {load:X} {veneer_bytes:X} move',
+          f'   {veneer_bytes:X} to loadsize',
+          '   init-program',
+          # Not diagnostics.  mkcoldboot.py maps this low page after init-program and the boot
+          # works; leave it out and the veneer dies at its own 0x52FC8 with a DSI
+          # (`DEFAULT CATCH!, code=FFF00300`).  Ledger row 1 nops the veneer's own `claim` of the
+          # SYSTEM PARAMETER BLOCK and RESTART BLOCK, which live down here -- so with the claim
+          # skipped, somebody still has to map the page, and this is who.
+          f'   4000 1000 " map-space" nt-pe $call-method',
+          f'   " {cd_dev}" encode-string " bootpath" _chosen (property)',
+          '   ." powermac-nt-hal: starting Windows NT Setup" cr',
+          '   go',
+          ';',
+          '',
+          'nt-boot']
+    return '\r\n'.join(L) + '\r\n'
+
+
+def setup_script(real_base=0x3F00000, load_base=0x3E00000):
+    """The once-per-machine half.  `little-endian?` is firmware NVRAM and `reset-all` is what
+    applies it, so no medium can set it before the firmware has read the medium -- this cannot be
+    folded into boot.of, and any claim of "insert and go" on a virgin machine is false."""
+    return '\r\n'.join([
+        '\\ powermac-nt-hal -- configure this machine for Windows NT.  Run once:',
+        '\\     load fd:,\\setup.of',
+        '\\     load-base loadsize eval',
+        '\\ The machine resets at the end; then run boot.of the same way, every boot.',
+        '',
+        '." powermac-nt-hal: setting little-endian mode, then resetting" cr',
+        'setenv little-endian? true',
+        'setenv real-mode? false',
+        f'setenv real-base {real_base:X}',
+        f'setenv load-base {load_base:X}',
+        'reset-all',
+    ]) + '\r\n'
+
+
 def txtsetup_oem(display, adb=False):
     defaults = ['\n[Defaults]', 'computer = shiner_up', 'keyboard = adb_kbd']
     if display:
@@ -307,8 +398,13 @@ def main():
                          'the SCSI prompt (S, Other) -- the only OEM class SETUPLDR loads more '
                          'than one driver for, and how maciNTosh delivers the same driver')
     ap.add_argument('--boot-script', metavar='PATH',
-                    help='an Open Firmware Forth script, placed at \\BOOT.OF. What the user runs '
-                         'at the 0 > prompt instead of typing the layout by hand')
+                    help='use this file as \\BOOT.OF instead of the generated one')
+    ap.add_argument('--fd-dev', default='/bandit/gc/swim3',
+                    help='Open Firmware path of this drive, for boot.of to read the veneer from')
+    ap.add_argument('--cd-dev', default='/bandit/53c825@11/sd@0,0',
+                    help="Open Firmware path of the CD, which boot.of makes /chosen bootpath")
+    ap.add_argument('--no-scripts', action='store_true',
+                    help='leave \\BOOT.OF and \\SETUP.OF off the disk')
     ap.add_argument('--tag', metavar='PATH',
                     help="the distribution's media tag file, e.g. the CD's own CDROM_W.40, "
                          'placed in this disk\'s root under the same name. `[SourceDisksNames]` '
@@ -376,11 +472,18 @@ def main():
     # the user's disc: SETUPLDR has OEM prompts for SCSI, Computer and Display and none for the
     # keyboard, so `txtsetup.oem`'s `[Keyboard]` section is read by `setupdd.sys` under NT, long
     # after Setup needs a keyboard.  The root copy stays for the OEM-disk arrangement.
-    if a.boot_script:
-        data = read(a.boot_script)
-        c, _ = fs.alloc(data)
-        root.append(fs.dirent('BOOT.OF', c, len(data)))
-        print(f'  \\BOOT.OF   {len(data)} bytes')
+    if not a.no_scripts:
+        boot = (read(a.boot_script) if a.boot_script
+                else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev).encode('ascii'))
+        c, _ = fs.alloc(boot)
+        root.append(fs.dirent('BOOT.OF', c, len(boot)))
+        setup = setup_script().encode('ascii')
+        c2, _ = fs.alloc(setup)
+        root.append(fs.dirent('SETUP.OF', c2, len(setup)))
+        print(f'  \\SETUP.OF  {len(setup)} bytes   once per machine: load fd:,\\setup.of  '
+              f'then  load-base loadsize eval')
+        print(f'  \\BOOT.OF   {len(boot)} bytes   every boot:       load fd:,\\boot.of   '
+              f'then  load-base loadsize eval')
 
     if a.tag:
         data = read(a.tag)
