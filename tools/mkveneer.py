@@ -4,9 +4,10 @@
 """mkveneer.py <VENEER.EXE> --out <patched.exe> — bake this project's veneer patches into the
 image, instead of poking them into memory after Open Firmware has loaded it.
 
-Ledger rows 1-5 are all one- or two-word edits to Microsoft's ARC shim, and every one of them is
-currently typed into Open Firmware (or poked by the test rig) *after* the veneer is in RAM.  That
-is fine for a development loop and useless for anybody else: `CHARTER.md` §3.1 says so outright —
+Ledger rows 1-5 and 17 are all one-, two- or few-byte edits to Microsoft's ARC shim, and every
+one of them was typed into Open Firmware (or poked by the test rig) *after* the veneer was in
+RAM.  That is fine for a development loop and useless for anybody else: `CHARTER.md` §3.1 says
+so outright —
 "a published project needs a better answer than 'type these into Open Firmware'".
 
 Every one of those pokes is at an image virtual address, and the veneer is a raw COFF with base
@@ -58,6 +59,19 @@ BYTE_PATCHES = [
 ]
 SCSI_MODEL = (0x5F420, b'NCR,53C810\0', b'NCR,825A\0\0\0', 5,
               "the SCSI identifier Setup's mass-storage detection matches to symc810.sys")
+# Row 17 is the floppy, and it is one string.  `convert_name` classifies a node by its Open
+# Firmware `device_type` and `name`: device_type `block` gives ControllerClass, and then the name
+# decides -- `disk` and `floppy` both give DiskController, `cdrom` gives CdromController,
+# anything else gives OtherController.  Apple's node is `device_type block`, `name swim3`, so it
+# falls through to *other*, `convert_controller` hangs an OtherPeripheral off it, and the ARC
+# path comes out `multi(0)other(0)other(0)` instead of the `multi(0)disk(0)fdisk(%d)` SETUPLDR
+# spells floppies with.  The same string is read at all three places that matter -- the
+# classification, the child `convert_controller` adds (`fdisk`), and the `convert_config` special
+# case that calls `convert_config_floppy` -- so renaming it to the name this machine's firmware
+# actually uses turns all three on at once.  Nothing on an ANS is called `floppy`, so nothing is
+# lost by the rename.  ANS-only, like every veneer patch: see the plan's section 7.
+FLOPPY_NAME = (0x5F398, b'floppy\0', b'swim3\0\0', 17,
+               "the OBP node name the veneer recognises as a floppy drive")
 
 
 def main():
@@ -105,12 +119,12 @@ def main():
         d[off:off + len(new)] = new
         print(f'  row {row}  VA {va:#07x}  {want!r} -> {new!r}   {why}')
 
-    va, want, new, row, why = SCSI_MODEL
-    off = ven.va2off(va)
-    if bytes(d[off:off + len(want)]) != want:
-        sys.exit(f'{va:#x} holds {bytes(d[off:off+len(want)])!r}, expected {want!r} — refusing')
-    d[off:off + len(new)] = new
-    print(f'  row {row}  VA {va:#07x}  {want!r} -> {new!r}   {why}')
+    for va, want, new, row, why in (SCSI_MODEL, FLOPPY_NAME):
+        off = ven.va2off(va)
+        if bytes(d[off:off + len(want)]) != want:
+            sys.exit(f'{va:#x} holds {bytes(d[off:off+len(want)])!r}, expected {want!r} — refusing')
+        d[off:off + len(new)] = new
+        print(f'  row {row}  VA {va:#07x}  {want!r} -> {new!r}   {why}')
 
     open(a.out, 'wb').write(bytes(d))
     print(f'{a.out}: written')
