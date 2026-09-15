@@ -83,6 +83,17 @@ ADB_CODE = {
 SHIFTED = {'!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8',
            '(': '9', ')': '0', '~': '`', '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\',
            ':': ';', '"': "'", '<': ',', '>': '.', '?': '/'}
+# Keys Setup needs that are not characters.  The arrows are the trap: 0x7B-0x7E are Apple's
+# *virtual* key codes, which is what the emulator's keyboard.down("down") sends -- and the ADB
+# keyboard driver does not map them, so Setup's highlight never moves, while Return, Page Down
+# and F8 all work and make it look like the keyboard is fine.  The Apple Extended Keyboard II
+# sends 0x3B-0x3E on the wire; those are what get through.  Measured at Setup's partition list.
+ADB_NAMED = {
+    'return': 0x24, 'escape': 0x35, 'tab': 0x30, 'backspace': 0x33,
+    'pagedown': 0x79, 'pageup': 0x74, 'f8': 0x64, 'f3': 0x63, 'f1': 0x7A,
+    'left': 0x3B, 'right': 0x3C, 'down': 0x3D, 'up': 0x3E,
+}
+
 ADB_SHIFT = 0x38
 
 # Long enough that each transition lands in its own auto-poll.  **This is the whole point.**
