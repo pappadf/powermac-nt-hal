@@ -44,14 +44,26 @@ default) alongside `auto-boot?` and `boot-command`, so parking phase 2 in NVRAM 
 would make this disc insert-and-go -- is available rather than wishful.
 
 **Not proven.** `go` after the CD load faults: `DEFAULT CATCH! code=FFF00600` (alignment) at
-`SRR0 00050014`, with `SRR1 00003071` where a healthy boot shows `0001B071`. The LE bits are
+`SRR0 00050014`, with `SRR1 00003071` where a healthy boot shows `0001B071` -- the LE bits are
 clear, so the CPU enters the veneer big-endian and reads its little-endian instructions as
-rubbish. Adding the working path's `4000 1000 map-space` / `4000 do-translate` step did not
-change it. The difference that remains is that the working path does
-`3E00000 27800 map-space` **inside the pe-loader's package** before moving the image in and
-calling `init-program`, whereas `load` writes to load-base without that mapping ever being
-established. That is the next thing to try, and until it works the route that boots is still
-`mkcoldboot.py`'s.
+rubbish.
+
+Three explanations have been tried and killed, which is worth more than the guesses:
+
+  * adding the working path's `4000 1000 map-space` / `4000 do-translate` after `init-program`:
+    no change;
+  * mapping load-base inside the pe-loader package (`3E00000 27800 map-space`) before
+    `init-program`, the way the read-blocks path does: no change;
+  * "the CD path leaves the machine big-endian" -- measured and **false**.  `machine.cpu.msr`
+    reads `0x1b071` after `reset-all`, after the `load`, and after `init-program` alike, and
+    0x50000 holds the veneer.
+
+So the machine is little-endian throughout and the image is laid out correctly, and `go` still
+enters big-endian.  What differs between the two routes is therefore the *client program state*
+`init-program` records -- `load` sets `loadsize` and writes load-base itself, where the working
+path moves the image in by hand and sets `loadsize` explicitly.  Reading the pe-loader package's
+`init-program` (it is Forth in the ROM, and `see init-program` will print it) is the next step,
+not another guess.  Until then the route that boots is still `mkcoldboot.py`'s.
 
 Prototype.  The in-place patching and the `load`/`init-program` route are tested; the boot
 script written to a spare extent is **not** yet executed by the firmware automatically -- that
