@@ -91,6 +91,12 @@ def main():
                                                   "ROM's pe-loader reads")
     ap.add_argument('--staging-block', type=lambda x: int(x, 0), default=0x800)
     ap.add_argument('--staging-size', type=lambda x: int(x, 0), default=8 << 20)
+    ap.add_argument('--veneer-into', default='',
+                    help="write the patched veneer into an EXISTING disk image at "
+                         "--staging-block, leaving the rest of it alone. The block the ROM's "
+                         "pe-loader reads (0x800, 316 blocks) lies in the gap between the MBR and "
+                         "a first partition at LBA 4096, so NT's own install target can carry the "
+                         'veneer too and the machine needs only one disk.')
     a = ap.parse_args()
 
     print(f'{a.source} -> {a.out}')
@@ -147,6 +153,21 @@ def main():
             sf.write(ven)
         print(f'{a.staging}: {a.staging_size} bytes, patched veneer at block '
               f'{a.staging_block:#x} ({len(ven)} bytes)')
+    if a.veneer_into:
+        ven = open(vtmp, 'rb').read()
+        need = a.staging_block + (len(ven) + 511) // 512
+        with open(a.veneer_into, 'r+b') as df:
+            df.seek(0x1BE + 8)
+            first = struct.unpack('<I', df.read(4))[0]
+            if first and first < need:
+                sys.exit(f'{a.veneer_into}: partition 1 starts at LBA {first}, but the veneer '
+                         f'needs blocks {a.staging_block}..{need}. Re-create the disk with its '
+                         f'first partition at 4096 or later (mkarcdisk.py --part 4096:...).')
+            df.seek(a.staging_block * 512)
+            df.write(ven)
+        print(f'{a.veneer_into}: veneer at block {a.staging_block:#x} '
+              f'(blocks {a.staging_block}..{need}; partition 1 at LBA {first})')
+
     if not a.veneer_out:
         os.remove(vtmp)
 

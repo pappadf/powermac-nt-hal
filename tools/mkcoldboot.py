@@ -25,16 +25,19 @@ reaches Setup's computer-type menu, the images are self-sufficient.
 Nothing from Microsoft or Apple is stored here: the ROM, the CD and the veneer are all the
 user's own, and the generator only types firmware commands.
 """
-import argparse
+import argparse, os, sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mkbootscript import adb_char_statements          # per-character down/wait/up on ADB
 
 OF_STAGE_00 = ['setenv little-endian? true', 'setenv real-mode? false',
                'setenv real-base 3F00000', 'setenv load-base 3E00000']
 
 # The pe-loader reads 512-byte blocks; the veneer is 0x27800 bytes = 0x13C blocks, taken 0x20 at
 # a time because that is what the firmware's own transcript does and it is known to work.
-def stage_10(block, total):
+def stage_10(block, total, dev='/bandit/53c825@12/sd@0,0'):
     out = ['dev /packages/pe-loader', '3D00000 27800 map-space', 'dev /', '0 value diskih',
-           '" /bandit/53c825@12/sd@0,0" open-dev to diskih', 'diskih .']
+           f'" {dev}" open-dev to diskih', 'diskih .']
     addr, blk, left = 0x3D00000, block, total
     while left > 0:
         n = min(0x20, left)
@@ -52,19 +55,52 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--rom', required=True)
     ap.add_argument('--cd', required=True, help='the patched ISO (mkoem.py + the HAL)')
-    ap.add_argument('--staging', required=True,
-                    help='raw disk holding the patched veneer at --veneer-block')
+    ap.add_argument('--staging',
+                    help='raw disk holding the patched veneer at --veneer-block. Optional: a '
+                         'floppy can hold it instead (--floppy), which is the point of '
+                         'docs/2026-09-15-the-boot-floppy.md')
+    ap.add_argument('--floppy',
+                    help='image to put in the internal drive before the machine is configured. '
+                         "The insert survives `reset-all`, so it is done once, up front.")
     ap.add_argument('--veneer-block', type=lambda x: int(x, 0), default=0x800)
+    ap.add_argument('--veneer-dev', default='/bandit/53c825@12/sd@0,0',
+                    help='Open Firmware path of the disk holding the veneer. The second '
+                         'controller by default, but one disk can serve as both the veneer source '
+                         "and NT's install target -- the veneer sits at block 0x800 and NT's first "
+                         'partition starts at 4096, so they never meet.')
+    ap.add_argument('--cd-dev', default='/bandit/53c825@11/sd@0,0',
+                    help='Open Firmware path of the CD, for /chosen bootpath')
     ap.add_argument('--veneer-blocks', type=lambda x: int(x, 0), default=0x13C)
     ap.add_argument('--out', default='-')
     ap.add_argument('--screenshot', default='tmp/hal/cold.png')
     ap.add_argument('--chunks', type=int, default=900)
+    ap.add_argument('--console', choices=('serial', 'screen'), default='serial',
+                    help="'serial' switches the console to ttya and types at the SCC, which is "
+                         "what a script can read back as text. 'screen' leaves the console where "
+                         "the firmware puts it -- the monitor -- and types on the ADB keyboard, "
+                         "pacing on the picture settling instead of on prompt text. The machine "
+                         "boots with the screen as its console either way; serial is our choice, "
+                         "not the firmware's.")
     ap.add_argument('--model', default='ans500')
     ap.add_argument('--ram', type=int, default=65536)
     a = ap.parse_args()
 
     o = []
     def s(line=''): o.append(line)
+    def type_screen(text):
+        """Type one line on the ADB keyboard, one character at a time.
+
+        NOT keyboard.type(): it paces its events 4 ms apart while Cuda auto-polls every 11 ms, so
+        a character's press and release share one ADB packet and only the first is acted on --
+        which silently drops characters (wall 57).  A dropped character in
+        'setenv little-endian? true' is a boot that fails for no visible reason."""
+        for ch in text:
+            for line in adb_char_statements(ch):
+                s(line)
+        for line in adb_char_statements('\n'):
+            s(line)
+        s('let _s = settle(4, 400000000)')
+
     def type_of(text, spin=6000000):
         """Type one line at the firmware. The SCC receive FIFO holds about sixteen characters, so
         a long line goes in four at a time with the machine running in between -- and '$' is
@@ -76,6 +112,16 @@ def main():
             s(f'machine.scc.a.receive("{c}")'); s(f'scheduler.run {spin}')
         s('machine.scc.a.receive("\\r")'); s(f'scheduler.run {spin}')
 
+    def emit(cmd, label=None):
+        """Type one firmware line on whichever console this run uses."""
+        if a.console == 'screen':
+            s(f'echo "OF> {label or cmd}"'.replace('$', '\\$'))
+            type_screen(cmd)
+        else:
+            type_of(cmd)
+            s('echo "OF> %s -> ${wait_prompt(600000000)}"'
+              % (label or cmd).replace('"', '\\"').replace('$', '\\$'))
+
     s('# Generated by tools/mkcoldboot.py — do not edit; regenerate.')
     s('# A cold boot of a patched CD: no pokes, no breakpoints, nothing from a checkpoint.')
     s('')
@@ -84,6 +130,29 @@ def main():
     # in the receive buffer from the previous command.  wait_ok returned instantly on that stale
     # text, so every line of stage 10 was typed into a machine that was still rebooting and went
     # nowhere.  Drain first, then wait for "0 > ".
+    if a.console == 'screen':
+        # No text to match on, so pace on the picture: type a line, wait until the visible region
+        # stops changing.  The visible region, not the whole framebuffer -- screen.checksum() with
+        # no arguments hashes the stride padding too, which is off-screen scratch that churns while
+        # the picture is still.
+        s('def settle(quiet, budget) {')
+        s('    let seen = 0')
+        s('    let still = 0')
+        s('    let used = 0')
+        s('    while $still < $quiet && $used < $budget {')
+        s('        scheduler.run 20000000')
+        s('        let sum = try(machine.screen.checksum(0, 0, machine.screen.height, '
+          'machine.screen.width), $seen)')
+        s('        if $sum == $seen {')
+        s('            $still = $still + 1')
+        s('        } else {')
+        s('            $seen = $sum')
+        s('            $still = 0')
+        s('        }')
+        s('        $used = $used + 20000000')
+        s('    }')
+        s('    return $still')
+        s('}')
     s('def wait_prompt(budget) {')
     s('    let out = ""')
     s('    let used = 0')
@@ -118,7 +187,7 @@ def main():
     # The console may be the screen; Apple's documented terminal setup, typed on the machine's
     # own keyboard, then a power cycle so the setting takes (machine.boot would build a NEW
     # machine with a virgin store and come back on the screen again).
-    s('if !contains($boot, "0 > ") {')
+    s('if %s {' % ('false' if a.console == 'screen' else '!contains($boot, "0 > ")'))
     s('    let k1 = machine.adb.keyboard.type("setenv output-device ttya\\n")')
     s('    scheduler.run 400000000')
     s('    let k2 = machine.adb.keyboard.type("setenv input-device ttya\\n")')
@@ -131,21 +200,30 @@ def main():
     s('echo "${$boot}"')
     s('')
     s(f'machine.scsi.attach_cdrom("{a.cd}", 0)')
-    s(f'machine.scsi2.attach_hd("{a.staging}", 0)')
-    s('echo "=== media: cd=${machine.scsi.device[0].type} staging=${machine.scsi2.device[0].type} ==="')
+    media = ['cd=${machine.scsi.device[0].type}']
+    if a.staging:
+        s(f'machine.scsi2.attach_hd("{a.staging}", 0)')
+        media.append('staging=${machine.scsi2.device[0].type}')
+    if a.floppy:
+        s(f'let fdins = try(machine.floppy.drive[0].insert("{a.floppy}"), "ERR")')
+        media.append('floppy=${$fdins}')
+    s('echo "=== media: ' + ' '.join(media) + ' ==="')
     s('')
     s('echo "=== stage 00: the little-endian configuration reboot ==="')
     for c in OF_STAGE_00:
-        type_of(c); s('echo "OF> %s -> ${wait_prompt(200000000)}"' % c.replace('"', '\\"'))
-    type_of('reset-all')
+        emit(c)
+    emit('reset-all')
     # The reboot re-narrates from POST; nothing may be typed until a fresh prompt appears.
     s('let rst = machine.scc.a.sent()')
     s('echo "=== reset-all: waiting for the machine to come back ==="')
-    s('echo "${wait_prompt(2000000000)}"')
+    if a.console == 'screen':
+        s('let _b = settle(20, 3000000000)')
+    else:
+        s('echo "${wait_prompt(2000000000)}"')
     s('')
     s('echo "=== stage 10: read the patched veneer off the staging disk ==="')
-    for c in stage_10(a.veneer_block, a.veneer_blocks):
-        type_of(c); s('echo "OF> %s -> ${wait_prompt(600000000)}"' % c.replace('"', '\\"').replace('$', '\\$'))
+    for c in stage_10(a.veneer_block, a.veneer_blocks, a.veneer_dev):
+        emit(c)
     s('echo "=== veneer laid out; check the image actually carries the patches ==="')
     # peek.l(A) reads the guest word at A^4 -- the 604's little-endian address munge.
     for va, want in ((0x514E0, '60000000 nop'), (0x51E3C, '60000000 nop'),
@@ -155,11 +233,13 @@ def main():
     s('echo "  0x5d0c0 = ${machine.memory.peek.b(0x5d0c7)}   want 0x0"')
     s('')
     s('echo "=== stage 26: point /chosen bootpath at the CD ==="')
-    type_of('" /bandit/53c825@11/sd@0,0" encode-string " bootpath" _chosen (property)')
-    s('echo "OF> bootpath -> ${wait_prompt(300000000)}"')
+    emit(f'" {a.cd_dev}" encode-string " bootpath" _chosen (property)', 'bootpath')
     s('')
     s('echo "=== stage 30: go — NO pokes applied, the images carry every patch ==="')
-    type_of('go')
+    if a.console == 'screen':
+        type_screen('go')
+    else:
+        type_of('go')
     s('let out = ""')
     s('let i = 0')
     s(f'while $i < {a.chunks} {{')
