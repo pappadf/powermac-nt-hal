@@ -206,6 +206,62 @@ dll = d1, cirrus.dll
 
 
 
+def pe_checksum(data):
+    """The PE image checksum NT verifies before it will load a driver: a 16-bit ones-complement
+    sum of the whole file with the checksum field itself zeroed, plus the file length.  A driver
+    whose checksum does not match is refused with STATUS_IMAGE_CHECKSUM_MISMATCH."""
+    pe = struct.unpack_from('<I', data, 0x3c)[0]
+    if data[pe:pe + 4] != b'PE\0\0':
+        sys.exit('not a PE image')
+    d = bytearray(data)
+    struct.pack_into('<I', d, pe + 24 + 64, 0)
+    if len(d) & 1:
+        d += b'\0'
+    total = 0
+    for i in range(0, len(d), 2):
+        total += struct.unpack_from('<H', d, i)[0]
+        total = (total & 0xFFFF) + (total >> 16)
+    total = (total & 0xFFFF) + (total >> 16)
+    return (total + len(data)) & 0xFFFFFFFF
+
+
+VGA_APERTURE, VGA_APERTURE_LEN = 0x000A0000, 0x00020000
+
+
+def move_vga_aperture(driver, to):
+    """Ledger row 6, in the one file an OEM disk can deliver -- and now for the right reason.
+
+    A display miniport hands `videoprt` an array of VIDEO_ACCESS_RANGE (two halves of a
+    LARGE_INTEGER start, a length, then four flag bytes), and this one claims the legacy VGA
+    aperture: 0xA0000 for 128 KB.  `IoReportResourceUsage` translates every reported range
+    through the HAL, and ours refuses PCI memory below 0x80000000 -- deliberately, because on
+    this board that address is ordinary RAM and handing it back would let the driver write over
+    the kernel.  The kernel takes the refusal as STATUS_INVALID_PARAMETER and fails the whole
+    call, which is wall 25.  It was never a resource conflict.
+
+    So the claim has to name an address the machine can actually translate.  `to` must be at or
+    above 0x80000000 for that reason; below it the HAL refuses exactly as before and nothing
+    changes -- which is what made an earlier attempt at 0x70000000 look like a dead end.
+
+    Still a workaround, and still ledger row 6: it edits a Microsoft driver's data.  What it
+    buys is that the edit is in the miniport, which `txtsetup.oem` can carry, rather than in
+    `videoprt.sys`, which it cannot."""
+    if to < 0x80000000:
+        sys.exit(f'{to:#x} is below 0x80000000, which the HAL refuses to translate — '
+                 'the claim would fail exactly as it does unpatched')
+    d = bytearray(driver)
+    hits = [o for o in range(0, len(d) - 16, 4)
+            if struct.unpack_from('<III', d, o) == (VGA_APERTURE, 0, VGA_APERTURE_LEN)]
+    if len(hits) != 1:
+        sys.exit(f'expected exactly one VGA-aperture access range in the display driver, '
+                 f'found {len(hits)} — refusing to patch')
+    struct.pack_into('<I', d, hits[0], to)
+    struct.pack_into('<I', d, struct.unpack_from('<I', d, 0x3c)[0] + 24 + 64, pe_checksum(bytes(d)))
+    print(f'  ledger row 6  file {hits[0]:#07x}  VGA access range {VGA_APERTURE:#x} -> {to:#x}, '
+          f'PE checksum recomputed')
+    return bytes(d)
+
+
 def txtsetup_oem(display):
     defaults = ['\n[Defaults]', 'computer = shiner_up', 'keyboard = adb_kbd']
     if display:
@@ -225,6 +281,10 @@ def main():
     ap.add_argument('--kbd', help='the driver installed as I8042PRT.SYS (optional while C5 is open)')
     ap.add_argument('--display-driver', help='the display miniport, installed as CIRRUS.SYS')
     ap.add_argument('--display-dll', help='the display DLL, installed as CIRRUS.DLL')
+    ap.add_argument('--vga-aperture', type=lambda x: int(x, 0), metavar='ADDR', default=None,
+                    help='ledger row 6: move the display miniport\'s legacy-VGA-aperture claim '
+                         'from 0xA0000 to ADDR, which must be at or above 0x80000000 — see '
+                         'move_vga_aperture(). 0x90000000 is what this project uses')
     ap.add_argument('--oem', help='a txtsetup.oem to use instead of the one built in')
     ap.add_argument('--label', default='NTOEMDISK')
     a = ap.parse_args()
@@ -232,6 +292,10 @@ def main():
     def read(p):
         with open(p, 'rb') as f:
             return f.read()
+
+    if bool(a.display_driver) != bool(a.display_dll) or (a.vga_aperture is not None
+                                                         and not a.display_driver):
+        sys.exit('the display class needs both --display-driver and --display-dll, or neither')
 
     fs = Fat12(**GEOM)
     veneer = read(a.veneer)
@@ -255,12 +319,12 @@ def main():
             print(f'  ({name} omitted -- no path given)')
             continue
         data = read(path)
+        if name == 'CIRRUS.SYS' and a.vga_aperture is not None:
+            data = move_vga_aperture(data, a.vga_aperture)
         c, _ = fs.alloc(data)
         where.append(fs.dirent(name, c, len(data)))
 
     display = bool(a.display_driver and a.display_dll)
-    if not display and (a.display_driver or a.display_dll):
-        sys.exit('the display class needs both --display-driver and --display-dll, or neither')
     oem = read(a.oem) if a.oem else txtsetup_oem(display).encode('ascii')
     oc, _ = fs.alloc(oem)
 

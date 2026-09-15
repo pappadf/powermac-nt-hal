@@ -433,7 +433,7 @@ does.
 UI onto the monitor — the grey status bar with black text is the giveaway that this is Setup
 drawing through the video driver and not the HAL's two-colour console.
 
-### Wall 25 — The legacy VGA aperture is RAM here *(still open)*
+### Wall 25 — The legacy VGA aperture is RAM here *(reopened and understood, 15 September)*
 
 **Symptom.** `VideoPortVerifyAccessRanges` returns `ERROR_INVALID_PARAMETER`.
 
@@ -456,6 +456,67 @@ in the loop that is not defensible as a fix**, and it is flagged as such whereve
 The HAL did gain one real correctness fix from the investigation: `HalTranslateBusAddress` now
 refuses PCI memory below `0x80000000`, because handing a driver an identity translation of
 `0xA0000` would have let it write over the kernel.
+
+#### What it actually is *(15 September — and the paragraph above is what changed it)*
+
+Everything above was measured in September and was true **then**. Adding that one correctness
+fix changed the failure, and nine months of notes kept describing the old one. Re-measured from
+the top:
+
+**`VideoPortVerifyAccessRanges` is four instructions of wrapper.** The work is at videoprt image
+`0x12efc`, which turns the miniport's `VIDEO_ACCESS_RANGE` array into a `CM_RESOURCE_LIST` and
+calls `IoReportResourceUsage`. It adds **no memory ranges of its own** — only an interrupt and a
+DMA descriptor, and it *removes* any range starting at `0xC0000`. So every reported range is the
+miniport's.
+
+**The array is `cirrus.sys`'s own static table**, image VA `0x1B480` (file `0xB480`), passed
+straight through — confirmed live, `r5 = 0x80704480`, which is exactly where that table lands.
+Only entry 3, the framebuffer, is overwritten from the BAR before the call:
+
+```
+range[0] start=0x3b0      len=0xc        flags=0x101   (I/O, visible)
+range[1] start=0x3c0      len=0x20       flags=0x101   (I/O, visible)
+range[2] start=0xa0000    len=0x20000    flags=0x100   (memory, visible)  <- the aperture
+range[3] start=0x81000000 len=0x1000000  flags=0x0     (memory, from the BAR)
+```
+
+**The worker returns `0xC000000D`, `STATUS_INVALID_PARAMETER` — not `0xC0000018`,
+`STATUS_CONFLICTING_ADDRESSES`**, which the same function has a separate path for. There is no
+conflict. It still returns it with **every one of those four ranges moved** somewhere nothing
+else can claim, which is what finally ruled the conflict story out.
+
+**`IoReportResourceUsage` translates every reported range through the HAL**, first address and
+last, and our own trace had been printing it for months:
+
+```
+HAL: TranslateBusAddress type 5 bus 0 addr 000003b0 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003bb space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003c0 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003df space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000a0000 space 0
+HAL: TranslateBusAddress type 5 bus 0 addr 000bffff space 0
+```
+
+It stops there. It never reaches `0x81000000`, because **we refuse `0xA0000`** — the correctness
+fix in the paragraph above — and the kernel turns that refusal into `STATUS_INVALID_PARAMETER`
+and fails the whole call.
+
+**Proof.** Move that range to `0x90000000` at a breakpoint and `VideoPortVerifyAccessRanges`
+returns success, no failure path is taken, and Setup runs on through drive-letter assignment and
+switches its UI to the monitor. Move it to `0x70000000` — the address the September note records
+as working — and nothing changes, because that is *also* below `0x80000000`. Both measurements
+were right on the day they were taken.
+
+**So ledger row 6 was never defeating a conflict check.** It was making `videoprt` ignore a
+refusal the HAL is right to make: this board genuinely does not reach `0xA0000` on the PCI bus,
+and saying so is a HAL's job. The claim is the thing that is wrong, and the fix is to change the
+claim — `tools/mkbootfloppy.py --vga-aperture 0x90000000` edits the miniport's table so it names
+an address the machine can translate, and that is a file an OEM disk can carry, which
+`VIDEOPRT.SYS` is not. A stock CD then reaches the video driver with **no poke anywhere**.
+
+It is still a workaround and still a ledger row — it edits a Microsoft driver's data. But it is
+the one the ledger's own "what would be a fix" column has asked for since September: *a video
+driver that does not claim the `0xA0000` aperture*.
 
 ---
 
@@ -1344,7 +1405,9 @@ disk; the video device assigned. Full write-up:
 Worth re-testing deliberately, without over-claiming it here: that run applied **no**
 `VideoPortVerifyAccessRanges` bypass (ledger row 6) and no video conflict appeared. A video
 driver whose TOC we were corrupting is a plausible cause of wall 25's unexplained
-`ERROR_INVALID_PARAMETER`.
+`ERROR_INVALID_PARAMETER`. *(It was not — see wall 25's 15 September re-measurement. The
+`ERROR_INVALID_PARAMETER` is our own `HalTranslateBusAddress` refusing the aperture, and there
+was never a conflict to appear.)*
 
 ![PAGE_FAULT_IN_NONPAGED_AREA, drawn by the HAL's own framebuffer console](traces/2026-09-07-boot-01-bugcheck-0x50.png)
 
@@ -1442,9 +1505,10 @@ through this HAL's drive letters, both 53C825A controllers and `win32k`.
 
 *Two things are still owed here.* The desktop background renders noisily, which is a display
 driver or emulated-Cirrus question nobody has looked at yet. And ledger row 6 is still defeated
-— now as a one-word patch to `VIDEOPRT.SYS` on the image rather than a memory poke, which at
-least needs no breakpoint timing, and which taught us that NT verifies driver PE checksums:
-the first attempt died with `STATUS_IMAGE_CHECKSUM_MISMATCH` until the checksum was recomputed.
+— at this point as a one-word patch to `VIDEOPRT.SYS` on the image rather than a memory poke,
+which at least needs no breakpoint timing, and which taught us that NT verifies driver PE
+checksums: the first attempt died with `STATUS_IMAGE_CHECKSUM_MISMATCH` until the checksum was
+recomputed. *(Superseded on 15 September: the bypass was never needed. Wall 25 below.)*
 
 ## The ledger of workarounds
 
@@ -1457,7 +1521,7 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 3 | `partition(1)` and `:0` strings blanked | same | same |
 | 4 | `VrOpen`'s partition branch `nop`ed (wall 22) | same — and **CD-only**: wall 46 showed it makes an MBR disk boot impossible, because `partition(N)` then opens the whole device | a device-aware patch, or a veneer replacement |
 | 5 | Eleven bytes renaming the veneer's SCSI model (wall 16) | same | a `TXTSETUP` `[Map.SCSI]` addition on an OEM disk would be cleaner |
-| 6 | `VideoPortVerifyAccessRanges` bypass (wall 25) | **defeats a correct conflict check** | a video driver that does not claim the `0xA0000` aperture |
+| 6 | The display miniport's legacy-VGA access range moved from `0xA0000` to `0x90000000` (wall 25) | edits a Microsoft driver's data. **Supersedes the `VideoPortVerifyAccessRanges` bypass**, which was never defeating a conflict check — it was ignoring our HAL's correct refusal to translate an address this board cannot reach | a video driver that does not claim the aperture at all, or a `[Display]` entry that configures one; this is the nearest thing to it that an OEM disk can deliver |
 | 7 | ~~The HAL delivered by overwriting `HALEAGLE.DLL` and selected as *MOTOROLA PowerStack*~~ **retired (wall 44)** | it impersonated another machine's HAL, and broke the moment Setup tried to install it | `tools/mkoem.py`: our own `[Computer]`, `[Hal.Load]` and `[hal]` entries, and `HALSHINR.DLL` by name |
 | 8 | ~~The `TXTSETUP.SIF` and `\PPC` directory patches applied to a *user's* CD image at run time~~ **retired (15 September)** | they edited proprietary media, even if only in a copy-on-write layer | `tools/mkbootfloppy.py`: a real OEM device-support disk, which is the mechanism those patches were imitating. A stock CD, MD5 `ab37556d…`, now boots and is offered *Apple Network Server 500/700* from the floppy |
 | 9 | `usbadb.sys`, a binary we may not redistribute | GPL-2.0 with no published source, so GPL §3 cannot be satisfied | our own port driver, from the `fpsidrv` template, on the HAL half that already exists |

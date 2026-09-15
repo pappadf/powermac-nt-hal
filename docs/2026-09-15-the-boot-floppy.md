@@ -12,8 +12,10 @@ reaches a 7500/8500 later instead of being thrown away.*
 >
 > A **stock, unmodified** NT 4.0 PowerPC CD — MD5 `ab37556d…`, not one byte written — now boots
 > on the emulator to text-mode Setup, is offered *Apple Network Server 500/700* as a computer
-> type, loads this project's HAL off the floppy, and carries on through the SCSI, IDE and NTFS
-> drivers to the video and disk screens. Ledger rows 8 and 10 are retired.
+> type, loads this project's HAL off the floppy, brings up the Cirrus through `cirrus.sys` and
+> `videoprt`, and stops at the keyboard — **with no poke, breakpoint or patched CD anywhere in
+> the run**. Ledger rows 8 and 10 are retired; wall 25, the oldest open item, is cleared, and
+> §4.3 says why it was never what the notes said it was.
 >
 > The floppy is **not** the boot device. The firmware reads the veneer off it as raw blocks
 > before anything is running, then boots the CD; Setup meets the floppy again later, as its
@@ -64,8 +66,12 @@ python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 # 2. the floppy: that veneer, SETUPLDR, the HAL, the keyboard driver, a txtsetup.oem
 python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img \
         --veneer tmp/veneer-fd.exe --setupldr <PPC/SETUPLDR> \
-        --hal build/hal.dll --kbd <i8042prt replacement>
+        --hal build/hal.dll --kbd <i8042prt replacement> \
+        --display-driver <cirrus.sys> --display-dll <cirrus.dll> \
+        --vga-aperture 0x90000000
 #   prints the veneer's start block and length -- pass them to step 3
+#   the three display options are what clear wall 25 (4.3); without them Setup dies
+#   initialising video.  cirrus.sys and cirrus.dll come off the user's own media
 
 # 3. a cold boot of the *stock* CD, with the veneer read off the floppy
 python3 tools/mkcoldboot.py --rom $R --cd <stock.iso> --staging <install-target.img> \
@@ -98,7 +104,8 @@ None are in git; all are reproducible.
 R=<ANS ROM>;  ISO=<stock NT CD>
 python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img --veneer tmp/veneer-fd.exe \
-        --setupldr <PPC/SETUPLDR> --hal build/hal.dll --kbd <i8042prt replacement>
+        --setupldr <PPC/SETUPLDR> --hal build/hal.dll --kbd <i8042prt replacement> \
+        --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000
 python3 tools/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
         --floppy tmp/boot-floppy.img --veneer-dev /bandit/gc/swim3 \
         --veneer-block 0x21 --veneer-blocks 0x13c \
@@ -283,50 +290,66 @@ the firmware prompt — was tried first and does not work: `" floppy" encode-str
 property` reports `ok`, and `dev /bandit/gc/floppy` then says `can't find device`. Open
 Firmware's path lookup does not follow a replaced `name`.
 
-### 4.3 What is in the way now: wall 25
+### 4.3 Wall 25 — cleared, and it was ours
 
 With both cleared, a stock CD gets all the way through NTOSKRNL's device initialisation —
 `SCSIPORT`, `symc810`, `atdisk`, `ntfs`, `cirrus`, `videoprt`, `floppy`, `cdrom`, `disk`,
 `sfloppy`, `i8042prt`, `kbdclass`, `fastfat`, `cdfs`, both 53C825As, the partition table, drive
-letters, and `system path -> 'E:\PPC'` — and stops at
+letters, and `system path -> 'E:\PPC'` — and then stopped at
 
 ```
 Setup has encountered a fatal error while initializing your computer's video.  (0, 0xc0000034)
 ```
 
-That is **wall 25**, `STORY.md`'s oldest open item, and it has nothing to do with the floppy:
-`cirrus.sys` claims the legacy VGA aperture `0xA0000+0x20000`, which is ordinary RAM on this
-board, `VideoPortVerifyAccessRanges` reports the conflict, and no `\Device\Video0` is created.
-Every previous run that got past it did so with ledger row 6's bypass — a memory poke during
-text-mode Setup, or a one-word patch to `VIDEOPRT.SYS` on the *installed disk* during GUI Setup.
-Neither is available to a cold boot that applies no pokes, so this is the first place a poke-free
-run has ever reached it.
+**wall 25**, `STORY.md`'s oldest open item, whose recorded diagnosis was *a resource conflict
+with the machine's physical memory*. It is not, and it has not been since we fixed something
+else. The full re-measurement is in `STORY.md` under wall 25; the short version:
 
-An OEM `[Display]` class looked like the way to carry row 6, and three runs say it is not — but
-they map the ground precisely:
+* `VideoPortVerifyAccessRanges` is a wrapper. The work is at videoprt `0x12efc`, which turns the
+  miniport's `VIDEO_ACCESS_RANGE` array into a `CM_RESOURCE_LIST` and calls
+  `IoReportResourceUsage`. It adds **no memory ranges of its own**.
+* That array is `cirrus.sys`'s own static table at image VA `0x1B480` — confirmed live at
+  `r5 = 0x80704480`, exactly where that table lands.
+* The call returns **`0xC000000D`, `STATUS_INVALID_PARAMETER`** — not `0xC0000018`,
+  `STATUS_CONFLICTING_ADDRESSES`, which the same code has a separate path for. It still returns
+  it with all four ranges moved somewhere nothing can claim.
+* `IoReportResourceUsage` translates every reported range through the HAL, and our own trace had
+  been printing the answer for months: `0x3b0`, `0x3bb`, `0x3c0`, `0x3df`, `0xa0000`, `0xbffff`
+  — and then it stops, never reaching the framebuffer. **We refuse `0xA0000`**, deliberately,
+  because on this board it is ordinary RAM. The kernel turns that refusal into
+  `STATUS_INVALID_PARAMETER`.
 
-1. **Setup accepts an OEM display type.** `Other` at the video menu, the same insert-the-disk
-   prompt, and *Cirrus Logic 54M30 (Apple Network Server 500/700)* is offered and selected off
-   the floppy. The class mechanism works exactly like `[Computer]`.
-2. **Exactly one image is loaded per OEM class, and it is the first file key in the section.**
-   `SlInit` calls `SlLoadOemDriver` once after `SlPromptOemVideo` (SETUPLDR `0x8060123c`).
-   With `port = …videoprt.sys` first, `videoprt.sys` came off the floppy and **no miniport was
-   loaded at all**. With `driver = …cirrus.sys` first, `cirrus.sys` came off the floppy and its
-   import of `VIDEOPRT.SYS` was resolved **from the CD** — the unpatched one. So the OEM disk
-   cannot deliver a patched `videoprt.sys` at all; the only display file it can carry is the
-   miniport.
-3. **Moving the miniport's own claim does not clear it.** `cirrus.sys` carries a four-entry
-   `VIDEO_ACCESS_RANGE` array at file offset `0xB480` — I/O `0x3B0+0xC`, I/O `0x3C0+0x20`,
-   memory `0xA0000+0x20000`, memory `0x1000000+0x100000` — and rewriting the third entry's start
-   to `0x70000000`, the address a runtime poke was measured to work at, with the PE checksum
-   recomputed, changes nothing: the same `0xC0000034`. So the only file the OEM disk can carry
-   is not where the colliding claim comes from. The obvious suspect is `videoprt` itself adding the legacy ranges for
-   a device whose PCI class is VGA-compatible, which would explain both this and why the fix has
-   always had to be inside `videoprt`.
+So the aperture claim has to name an address the machine can actually translate.
+`mkbootfloppy.py --vga-aperture 0x90000000` rewrites that one entry in the miniport's table and
+recomputes the PE checksum — and the miniport is a file `txtsetup.oem` **can** carry, which
+`VIDEOPRT.SYS` is not (one image per OEM class, imports resolved from the CD: measured).
 
-`mkbootfloppy.py` keeps `--display-driver` and `--display-dll` because measurement 1 makes them
-the delivery channel any fix will use, and emits no `[Display]` class without them, because
-measurements 2 and 3 say it currently buys nothing.
+**The result, with no poke anywhere:** Setup initialises video, switches its UI off the HAL's
+two-colour console onto the Cirrus, and asks the next question.
+
+![Setup drawing through the video driver, on a stock CD](../traces/2026-09-15-wall25-cleared.png)
+
+That grey status bar with black text is Setup drawing through `cirrus.sys`, which is how wall 24
+recorded the difference. The message on it is **wall 26**, the keyboard — the wall this project
+has already solved, but by writing a driver over the CD's `\PPC\I8042PRT.SYS`, which is
+precisely what this plan retired. Our floppy carries that driver and a `[Keyboard]` class for it;
+Setup has not yet been made to ask for it. That is the next step (§6).
+
+Three things this cost that are worth stating once:
+
+1. **`0x70000000` looked like a dead end and was the same bug.** The September note records that
+   address as making the check pass, so an early attempt here used it — and it is *also* below
+   `0x80000000`, so our HAL refused it exactly as it refuses `0xA0000`. Both measurements were
+   right on the day they were taken; the HAL rule between them is what changed.
+2. **An OEM `[Display]` class cannot carry a patched `VIDEOPRT.SYS`.** `SlInit` calls
+   `SlLoadOemDriver` once after `SlPromptOemVideo`, and it loads the *first* file key in the
+   section. With `port` first, `videoprt.sys` came off the floppy and no miniport loaded at all;
+   with `driver` first, `cirrus.sys` came off the floppy and its import of `VIDEOPRT.SYS` was
+   resolved from the CD. That is why the fix had to be in the miniport.
+3. **A status code is not a diagnosis.** `ERROR_INVALID_PARAMETER` was in the notes from the
+   start; nine months of work read it as "the conflict check failed" because that is what the
+   first investigation concluded. The code that produces it says otherwise in about forty
+   instructions.
 
 ## 5. What has to be built
 
@@ -338,7 +361,8 @@ measurements 2 and 3 say it currently buys nothing.
 | C4 | the drive's ARC identity and I/O | **done** — §4.1 (no patch) and §4.2 (ledger row 17) |
 | C5 | our own ADB port driver | not started. Replaces maciNTosh's `usbadb.sys`, the last non-shippable piece. `entii-for-workcubes` `fpsidrv`; the HAL half exists |
 | C6 | `nvramrc` installer | not started. The §2.1 block as one line, so the machine boots the floppy unattended. E10 says `nvramrc` exists; the one-line form is untested |
-| **C7** | **a display that survives a poke-free boot** | **new, and now the blocker.** §4.3. An OEM `[Display]` class is accepted (`--display-driver`, `--display-dll`), but cannot carry a patched `VIDEOPRT.SYS` — one image per class, imports resolved from the CD — and moving the miniport's own VGA access range does not clear the conflict. The next step is to find where the colliding claim is actually made: `videoprt` is the suspect, and `VideoPortGetAccessRanges` is where to look |
+| **C7** | ~~an OEM display class~~ **done** | `--display-driver`, `--display-dll` and `--vga-aperture 0x90000000`. Wall 25 cleared with no poke anywhere (§4.3). Still ledger row 6 — it edits a Microsoft driver's data — but it is now the edit the ledger always asked for, and one an OEM disk can deliver |
+| C8 | the `[Keyboard]` class, exercised | the floppy already carries the driver and the section; Setup has never asked for it. This is where the run now stops, and C5 is what makes it shippable |
 
 ## 6. Order of work
 
@@ -348,13 +372,13 @@ measurements 2 and 3 say it currently buys nothing.
    **Done**, and better: the CD stayed stock and the floppy became the OEM disk (E15–E17).
 3. ~~Get SETUPLDR to read `txtsetup.oem` and load our HAL as the OEM `Computer`.~~ **Done.**
    Ledger rows 8 and 10 are retired.
-4. **C7 next** — it is what stands between a stock CD and a completed install (§4.3). Start by
-   finding where the `0xA0000` claim is actually made, because three of the obvious answers are
-   already crossed off.
-5. **C6**, `nvramrc`, which removes the typing.
-6. **C5**, the ADB driver, which is what makes the floppy image redistributable. Also the only
-   way to exercise C2's `[Keyboard]` class honestly.
-7. Only then revisit the single-file/browser idea, which becomes a ~1.4 MB download built from
+4. ~~C7 — the display.~~ **Done**, and wall 25 with it (§4.3). A stock CD now reaches Setup's
+   keyboard question with no poke anywhere.
+5. **C8 next** — get Setup to take the ADB keyboard driver off the OEM disk, which is the wall
+   the run now stops at and the last thing the patched CD was still doing for us.
+6. **C6**, `nvramrc`, which removes the typing.
+7. **C5**, our own ADB driver, which is what makes the floppy image redistributable.
+8. Only then revisit the single-file/browser idea, which becomes a ~1.4 MB download built from
    the user's own CD.
 
 ## 7. Keeping the door open to other TNT models
@@ -398,15 +422,20 @@ better than it looked:
 * ~~**R1 — the blocker.**~~ **Closed.** §4.1 and §4.2.
 * ~~**R2 — can SETUPLDR read FAT?**~~ **Closed.** It carries a complete FAT reader (E14), and it
   read ours (E16).
+* **R8 — `0x90000000` is chosen, not derived.** The aperture claim has to land somewhere at or
+  above `0x80000000` that nothing else on this board decodes, and that is all `0x90000000` is.
+  It is above the framebuffer BAR (`0x81000000+0x1000000`) and below the `0xF0000000` MMIO
+  block, and it translates. Nothing has probed what a *write* there does on real hardware.
 * **R3 — does `setupdd` re-read the OEM disk under NT?** E6's `\device\floppy0\txtsetup.oem`
   is an NT path needing an NT driver, and no SWIM3 driver exists for NT. Not yet reached: the
   run stops at wall 25 before `setupdd` would look. If that read is unconditional, an NT-side
   SWIM3 driver becomes mandatory for the *install*, though not for text-mode Setup.
 * ~~**R4 — OEM `Computer` semantics.**~~ **Closed for `Computer`:** an OEM entry is offered on
   its own, replaces the HAL that `TXTSETUP.SIF` names, and its files are read from the disk
-  (E16, E17). **Closed for `Display` too**, as a mechanism: an OEM display type is offered and its driver
-  loaded off the disk (§4.3). **Open for `Keyboard`:** that class is written to the same shape
-  but Setup has never asked for it, so it has never been read.
+  (E16, E17). **Closed for `Display` too**, and used: an OEM display type is offered, its driver is loaded off
+  the disk, and that is what clears wall 25 (§4.3). **Open for `Keyboard`:** that class is
+  written to the same shape but Setup has never asked for it, so it has never been read — and it
+  is exactly where the run now stops.
 * **R5 — nothing here has run on real hardware.** Every row in §3 is emulator evidence. The
   tinkerdifferent threads show real ANS machines failing differently from ours. Two things in
   particular are emulator-shaped: E12's open-once rule, and the floppy timing — a real SWIM3
