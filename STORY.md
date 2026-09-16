@@ -13,7 +13,9 @@ it; Microsoft's PowerPC NT only ever ran on IBM and Motorola PReP machines. Ever
 inside the Granny Smith emulator, which models this board.
 
 **The goal.** Get NT 4.0's text-mode Setup to run. That needs a HAL — `HAL.DLL` — written from
-scratch, because none of the seven HALs on the CD knows this hardware.
+scratch, because none of the seven HALs on the CD knows this hardware. Setup ran end to end on
+6 September 2026 (Part 11); Part 12 starts the system it installed, which now reaches the kernel
+and stops in a video driver.
 
 **How to read this.** Walls are numbered in the order they bit. Each one gets the symptom as
 the machine reported it, what it actually was, how that was established, the fix, and what the
@@ -431,7 +433,7 @@ does.
 UI onto the monitor — the grey status bar with black text is the giveaway that this is Setup
 drawing through the video driver and not the HAL's two-colour console.
 
-### Wall 25 — The legacy VGA aperture is RAM here *(still open)*
+### Wall 25 — The legacy VGA aperture is RAM here *(reopened and understood, 15 September)*
 
 **Symptom.** `VideoPortVerifyAccessRanges` returns `ERROR_INVALID_PARAMETER`.
 
@@ -454,6 +456,67 @@ in the loop that is not defensible as a fix**, and it is flagged as such whereve
 The HAL did gain one real correctness fix from the investigation: `HalTranslateBusAddress` now
 refuses PCI memory below `0x80000000`, because handing a driver an identity translation of
 `0xA0000` would have let it write over the kernel.
+
+#### What it actually is *(15 September — and the paragraph above is what changed it)*
+
+Everything above was measured in September and was true **then**. Adding that one correctness
+fix changed the failure, and nine months of notes kept describing the old one. Re-measured from
+the top:
+
+**`VideoPortVerifyAccessRanges` is four instructions of wrapper.** The work is at videoprt image
+`0x12efc`, which turns the miniport's `VIDEO_ACCESS_RANGE` array into a `CM_RESOURCE_LIST` and
+calls `IoReportResourceUsage`. It adds **no memory ranges of its own** — only an interrupt and a
+DMA descriptor, and it *removes* any range starting at `0xC0000`. So every reported range is the
+miniport's.
+
+**The array is `cirrus.sys`'s own static table**, image VA `0x1B480` (file `0xB480`), passed
+straight through — confirmed live, `r5 = 0x80704480`, which is exactly where that table lands.
+Only entry 3, the framebuffer, is overwritten from the BAR before the call:
+
+```
+range[0] start=0x3b0      len=0xc        flags=0x101   (I/O, visible)
+range[1] start=0x3c0      len=0x20       flags=0x101   (I/O, visible)
+range[2] start=0xa0000    len=0x20000    flags=0x100   (memory, visible)  <- the aperture
+range[3] start=0x81000000 len=0x1000000  flags=0x0     (memory, from the BAR)
+```
+
+**The worker returns `0xC000000D`, `STATUS_INVALID_PARAMETER` — not `0xC0000018`,
+`STATUS_CONFLICTING_ADDRESSES`**, which the same function has a separate path for. There is no
+conflict. It still returns it with **every one of those four ranges moved** somewhere nothing
+else can claim, which is what finally ruled the conflict story out.
+
+**`IoReportResourceUsage` translates every reported range through the HAL**, first address and
+last, and our own trace had been printing it for months:
+
+```
+HAL: TranslateBusAddress type 5 bus 0 addr 000003b0 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003bb space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003c0 space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000003df space 1
+HAL: TranslateBusAddress type 5 bus 0 addr 000a0000 space 0
+HAL: TranslateBusAddress type 5 bus 0 addr 000bffff space 0
+```
+
+It stops there. It never reaches `0x81000000`, because **we refuse `0xA0000`** — the correctness
+fix in the paragraph above — and the kernel turns that refusal into `STATUS_INVALID_PARAMETER`
+and fails the whole call.
+
+**Proof.** Move that range to `0x90000000` at a breakpoint and `VideoPortVerifyAccessRanges`
+returns success, no failure path is taken, and Setup runs on through drive-letter assignment and
+switches its UI to the monitor. Move it to `0x70000000` — the address the September note records
+as working — and nothing changes, because that is *also* below `0x80000000`. Both measurements
+were right on the day they were taken.
+
+**So ledger row 6 was never defeating a conflict check.** It was making `videoprt` ignore a
+refusal the HAL is right to make: this board genuinely does not reach `0xA0000` on the PCI bus,
+and saying so is a HAL's job. The claim is the thing that is wrong, and the fix is to change the
+claim — `tools/mkbootfloppy.py --vga-aperture 0x90000000` edits the miniport's table so it names
+an address the machine can translate, and that is a file an OEM disk can carry, which
+`VIDEOPRT.SYS` is not. A stock CD then reaches the video driver with **no poke anywhere**.
+
+It is still a workaround and still a ledger row — it edits a Microsoft driver's data. But it is
+the one the ledger's own "what would be a fix" column has asked for since September: *a video
+driver that does not claim the `0xA0000` aperture*.
 
 ---
 
@@ -1014,6 +1077,439 @@ forty-minute run.
 
 ---
 
+## Part 11 — Installing, for real
+
+### Wall 41 — one drive letter per disk
+
+**Symptom.** *"Creating directory \WINNT…"*, then `STOP 0x1E (0xC0000005)` at `ntoskrnl+0x6D730`
+— the first instruction of `_wcsicmp`, `lhz r10,0(r3)`, reading a halfword at `r3 == 6`.
+
+**What it was.** Six is a `UNICODE_STRING`'s `Length` field, three characters — `"D:\"` —
+passed where its `Buffer` belonged. `IoAssignDriveLetters` created `\DosDevices\` links only for
+`\Device\Harddisk%d\Partition1`: **one letter per disk, not one per partition.** Setup numbers
+the volumes itself and called the install target `D:`; the HAL had given `D:` to the CD, and the
+volume being installed to had no symbolic link at all.
+
+**Fix.** Open each `\Device\Harddisk%d\Partition0` with `IoGetDeviceObjectPointer`, enumerate
+through the HAL's own `IoReadPartitionTable` (with `ReturnRecognizedPartitions` false, so the
+four-entries-per-table shape survives and entries 0–3 identify the MBR's own slots), then assign
+in NT's order: the first primary of each disk, then every logical drive, then the remaining
+primaries, then the CD-ROMs. If the scan fails, fall back to `Partition1` rather than leaving a
+disk with no letter at all.
+
+```
+HAL: C: -> \Device\Harddisk0\Partition1
+HAL: D: -> \Device\Harddisk0\Partition2
+HAL: IoAssignDriveLetters: boot device '\Device\CdRom0' -> E:, 0 floppy 1 disk 1 cdrom
+HAL: system path -> 'E:\PPC'
+```
+
+### Wall 42 — the compiler puts the misaligned access back, a third time
+
+**Symptom.** `STOP 0x1E (0x80000002)` at `hal.dll+0x1BC8`, in code written the same day.
+
+**What it was.** Cuda's clock arrives as four bytes, most significant first, so the new
+`HalpCudaGetTime` assembled them by hand — and clang folded the four byte loads into one
+**`lwbrx`**, load-word-byte-reversed, at `reply[3]`, which sits at 2 mod 4 on the stack:
+
+```
+80011bc4:  addi  3, 1, 18
+80011bc8:  lwbrx 3, 0, 3        <- the fault
+```
+
+This is wall 33's *big-endian twin*, and the Makefile's `-mllvm -combiner-store-merging=false`
+does not cover it: that is a store combine and this is a load. Wall 33's own note in
+`CONTRIBUTING.md` says the load side is "blocked with volatile where it matters" — which was true
+of `disk.c` and forgotten the moment new byte-assembly was written somewhere else.
+
+**Fix.** `volatile` at the point of access, as in `disk.c`. Verified by counting: **zero**
+byte-reversed accesses anywhere in the image.
+
+**Lesson, again.** A global flag that covers one direction reads like a global flag that covers
+the problem. It does not, and the half it misses is the half you will write next.
+
+### Wall 43 — a clock that answers is not a clock that is right
+
+**Symptom.** None. `HalQueryRealTimeClock` had returned a hardcoded date for weeks, which is
+invisible until you notice that every file NT installs is stamped with it.
+
+**Fix.** Cuda owns the clock: pseudo-command `0x03` reads it, `0x09` sets it, as a 32-bit count
+of seconds since 1904-01-01 delivered MSB first, which runs out in 2040. NT counts 100 ns units
+since 1601-01-01, and the two epochs are 110,667 days apart. The set path needs a 64-bit
+quotient — seconds-since-1601 is about 1.34 × 10¹⁰, so it does not fit in 32 bits — which is why
+`HalpDivU64` moved to `misc.c` and `disk.c` now shares it instead of keeping its own copy.
+
+```
+HAL: cuda clock e6c3ad1e -> 2026-9-6 23:51:58
+```
+
+Worth stating because "it returned TRUE" was not enough: `0xe6c3ad1e` is 3,871,583,518 seconds
+since 1904, which is 2026-09-06 23:51:58, checked independently. A clock that answers with
+nonsense is worse than one that does not answer, so the HAL traces the decoded value once.
+
+### Wall 44 — `The file haleagle.dll was not copied correctly`
+
+**Symptom.** With the drive letters fixed, Setup went three screens further than it ever had —
+through the filesystem choice, `\WINNT`, the surface scan — and began copying. Then:
+
+> The file haleagle.dll was not copied correctly. Although Setup did not encounter any errors
+> while copying this file, the copy Setup placed on your hard drive is not a valid Windows NT
+> system image.
+
+**What it was.** `haleagle.dll` is the file this HAL had been *impersonating* since wall 6: the
+HAL for MOTOROLA's PowerStack, whose extent we overwrite and whose menu entry we pick. That is
+fine for booting, because nothing checksums the HAL on the way in. It is not fine for
+installing. `[hal] powerstack_up = haleagle.dll, ,hal.dll` tells Setup to copy that file to the
+target as `hal.dll` — and Setup copies **the whole length the CD's directory record claims**,
+209,440 bytes, then checksums it. Our HAL is 42,496 bytes; the other 166,944 were still
+Microsoft's. Diagnosed without a single further run:
+
+```
+checksum over hal.dll's own 42496 bytes   0x129b7   = the stored value, self-consistent
+checksum over the 209440-byte slot        0x3b5d7   = what Setup computes
+```
+
+Which is wall 27 again — *"the checksum covers the directory-record length, not the length in
+the image"* — this time for the HAL rather than a driver.
+
+**Fix — and this one retires a workaround instead of adding one.** The honest answer was never
+padding; it was to stop impersonating. `tools/mkoem.py` gives the HAL a name and a machine of
+its own, entirely inside the existing ISO:
+
+- **`TXTSETUP.SIF`**, byte-for-byte the same length. The `bigbend_up` machine — MOTOROLA Big
+  Bend, which also used `haleagle.dll`, so nothing else loses its HAL — becomes `shiner_up`,
+  described as *"Apple Network Server 500/700"*, with `[Hal.Load]` and `[hal]` naming
+  `halshinr.dll` and `[SourceDisksFiles.ppc]` listing it. The substitutions net to zero: the
+  longer description costs six bytes and the `[Map.Computer]` line gives six back in alignment
+  spaces. A file that has to stay the size its directory record claims cannot grow.
+- **The `\PPC` directory block**, patched in place. `HALEAGLE.DLL` and `HALSHINR.DLL` are both
+  twelve bytes, so the record neither moves nor resizes — only the name changes, and the length
+  field becomes the real size of our image, which is what makes the checksum agree.
+
+Two things had to be discovered by trying. The patched SIF appeared to do nothing at first,
+because the checkpoint every run starts from is taken **at** the computer-type menu — SETUPLDR
+had already parsed the SIF before the snapshot, so patching it afterwards is too late. It has to
+go in at the pre-`go` checkpoint. (Wall 28 was the same mistake in a different disguise: a
+checkpoint downstream of the thing being patched.) And ISO 9660 wants directory records sorted
+by name, which ours no longer are — that turned out not to matter, because Setup's lookup scans
+linearly rather than searching.
+
+**Bought.** Setup's hardware menu, on the machine:
+
+```
+ 6  MOTOROLA PowerStack
+ 7  MOTOROLA PowerStack2
+ 8  Apple Network Server 500/700        <- ours, loading HALSHINR.DLL
+ 9  Powerized ES, MX, LX, TX (Uniprocessor)
+```
+
+and then, at last:
+
+```
+Please wait while Setup copies files to your hard disk.
+
+    Setup is copying files...        54%
+    [################                    ]
+                                          Copying: mfc40u.dll
+```
+
+**Windows NT installing itself onto an Apple Network Server.** Five things hold at once for that
+screen to exist: the drive letters resolve, the partition table reads and writes, the ARC
+environment answers, the clock timestamps the files, and the HAL is delivered under its own name
+through a `TXTSETUP.SIF` entry rather than by wearing another machine's.
+
+### The end of text-mode Setup
+
+It ran to the end. Sixty-one screens, **no bugcheck anywhere in the run**:
+
+> **This portion of Setup has completed successfully.**
+> Press ENTER to restart your computer.
+> When your computer restarts, Setup will continue.
+
+On the way there Setup wrote the installed system's boot configuration — through this HAL's
+`HalSetEnvironmentVariable`, which had been a stub returning `ENOMEM` two days earlier:
+
+```
+HAL: env set 'LoadIdentifier'  = 'Windows NT Workstation Version 4.00'
+HAL: env set 'OsLoader'        = 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)\os\winnt40\osloader.exe'
+HAL: env set 'OsLoadPartition' = 'multi(0)scsi(1)disk(0)rdisk(0)partition(2)'
+HAL: env set 'OsLoadFilename'  = '\WINNT'
+HAL: env set 'SystemPartition' = 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)'
+HAL: env set 'COUNTDOWN'       = '5'
+HAL: env set 'AUTOLOAD'        = 'YES'
+```
+
+Seven writes, one of them a *re-set* of a variable the HAL had already seeded — which is exactly
+the case wall 40's store-corruption bug would have scrambled. That bug was found by reading
+rather than by crashing, a day before the code path that would have exercised it existed. It is
+the clearest argument in this whole story for fixing what you find when you find it.
+
+**And the next wall is already visible in those eight lines.** They are in RAM (ledger row 12).
+Open Firmware has no ARC NVRAM to keep them in, so the restart the screen invites will lose
+every one of them — and `OSLOADER` is what the firmware would need them to find. Booting the
+installed system is the next phase, and it starts there.
+
+Screens: [`traces/`](traces/), `2026-09-07-setup-20-copying-files.png` through
+`-22-completed-successfully.png`.
+
+## Part 12 — Booting what Setup installed
+
+The eight variables above are in RAM, and the restart loses them. So the first disk boot is a
+rig: a script loads a pre-`go` checkpoint, points `/chosen bootpath` at the 53C825A, and injects
+a ten-variable ARC environment at OSLOADER's first `VrGetEnvironmentVariable`. Everything after
+that is the real thing — the veneer, `OSLOADER.EXE`, the hive, the boot drivers, `NTOSKRNL.EXE`
+and the `HAL.DLL` Setup itself copied.
+
+It reached the kernel. Five walls in between, and **not one of them was in the HAL**: two were
+in the loader, two were workarounds of ours misfiring, and one was the test rig. The full
+account, with the traces, is
+[`docs/2026-09-07-booting-the-installed-disk.md`](docs/2026-09-07-booting-the-installed-disk.md);
+what follows is the short version.
+
+Two things made the day mostly reading rather than guessing. `VENEER.EXE` and `OSLOADER.EXE` are
+both **raw COFF images shipped with their symbol tables intact** — 1,512 and 2,135 symbols,
+including every string constant's mangled `??_C@` name — and OSLOADER carries an
+`RT_MESSAGETABLE` that turns its error numbers into sentences. `tools/coffsyms.py` and
+`tools/coffdis.py` exist for exactly this.
+
+### Wall 45 — the errors arrived as hex, because the errors broke the error messages
+
+`OS Loader V4.00`, then three bare numbers: `0000232e 00002333 00002350`. `%08lx\r\n` is the
+only format string of that shape in the image and it sits with `BlFatalError`'s descriptor — it
+is the fallback for when a message id cannot be resolved. It could not be, because the *first*
+thing that failed was `BlInitResources`, which is what loads the message table. Decoded from the
+table by hand: 9006/9011/9040 *"could not access disk partition tables"*, then 9004/9017/9038
+*"`<winnt root>\system32\ntoskrnl.exe` is missing or corrupt"*.
+
+Both were one failure, and it was the next wall. Wall 45 was never a wall of its own — which is
+worth saying, because two hours went into it.
+
+### Wall 46 — a CD workaround, applied to a disk
+
+**Symptom.** `BlOpen` recognises no filesystem on `partition(1)`. All four recognisers ran, all
+four reads *succeeded*, all four rejected. `IsFatFileStructure` tests `buf[0] == 0xEB || 0xE9`
+first, and sector 0 of this disk is an MBR with zeroed boot code — while both partitions' real
+BPBs pass all nine of its tests.
+
+**What it was.** The veneer had opened the whole disk. Breaking before `OFOpen` and dumping the
+path says it plainly: `sd@0,0@0,0:0` where `:2` was wanted. Open Firmware itself is exact —
+driven by hand at `0 >`, `:1` and `:2` return each partition's BPB and `:0` returns the MBR.
+
+The cause was **wall 22's own workaround**: the `nop` over the branch at veneer image `0x54748`,
+which sends `partition(N)` with no file path down the whole-device route. That is right for the
+CD, where Apple's OF answers `:N` on an ISO with the root directory *as a file*. It is exactly
+wrong for an MBR disk, where `:N` is the only thing that gives NT partition-relative sectors.
+
+**Fixed** by restoring `VrOpen`'s shipped bytes for a disk boot. Both fatal errors went away and
+the message table loaded.
+
+*Worth stating once:* `machine.memory.poke.l A` writes the guest word at `A ^ 4`, because in
+little-endian mode a word at `A` lives at physical `A ^ 4`. The patch wall 22 describes at image
+`0x54748` is therefore written `poke.l 0x5474c`. Both are right; the gap between them wasted an
+hour.
+
+### Wall 47 — the loader's own path, written over the argv table
+
+**Symptom.** *"The `osloader` parameter does not point to a valid file."*
+
+**What it was.** `BlGetArgumentValue` wants an argv entry `osloader=…`. The veneer's `add_argv`
+emits `name=value`, or bare `value` when the name is an empty string — and the trace showed
+`Argv[1]` bare. Slot 0's name string `'OsLoader'` lives at veneer image `0x5cd48`, immediately
+after the boot-file path buffer at `0x5cd30`, which ships holding `\os\winnt\osloader.exe`:
+**22 characters**. Ours is `\OS\WINNT40\OSLOADER.EXE`, 24, and the patch that wrote it also
+NUL-padded eight bytes past the end. It had erased the name.
+
+Two of our own patches, then, in two consecutive walls. Both were found by reading the ledger's
+rows back against a new situation, which is the argument for the ledger existing.
+
+**Fixed** by putting the path in `.text` tail padding and repointing the table's value field,
+leaving `0x5cd30`-`0x5cd4f` as shipped.
+
+### Wall 48 — the hive Setup left behind is only partly written
+
+**Symptom.** *"`\WINNT\SYSTEM32\CONFIG\SYSTEM` is missing or corrupt"* — for a file that is
+there, 192,512 bytes, valid `regf` header, matching sequence numbers, correct header checksum.
+
+**What it was.** `BlLoadSystemHive` opened it, sized it, allocated for it and read all
+`0x2f000` bytes without an error. The rejection is `CmCheckRegistry`'s, and it is right:
+walking the bins from the host finds **3 of the 46** the header's length accounts for.
+Everything past file offset `0x4000` is zeroes. `DEFAULT` is short by one bin; `SYSTEM.SAV`,
+`SOFTWARE` and `SOFTWARE.SAV` are complete.
+
+*Wider than it looked (14 September).* Once wall 49 was fixed and the boot reached driver
+loading, it stopped on `Msfs.SYS` with `STATUS_FILE_CORRUPT_ERROR`. Walking the whole FAT finds
+**49 files whose cluster chain is shorter than their directory entry's size** — `MSFS.SYS` has
+16 KB allocated of 42 KB — clustered alphabetically around `MSFS`/`MUP`/`NDIS`/`NET*`/`NDDE*`,
+which is what a capture taken mid-copy looks like. Same cause, same row, and now the blocker.
+
+That is a disk image captured before NT flushed its last writes, and `SYSTEM` is the last file
+text-mode Setup produces. **Worked around, not fixed:** `tools/fatput.py` restores `SYSTEM` and
+`DEFAULT` from their own `.SAV` copies in place — which is what NT's repair option does. The fix
+is a rig change: capture the image after the restart prompt has flushed. Ledger row 15.
+
+### Wall 49 — where it stopped
+
+```
+HAL: halshinr 0.1 (HALSHINR-0.1-MARKER) for the Apple Network Server (phase 0)
+HAL: boot device multi(0)scsi(1)disk(0)rdisk(0)partition(2)
+HAL: nt boot path \WINNT\, setup block 00000000
+Microsoft (R) Windows NT (TM) Version 4.0 (Build 1381: Service Pack 1).
+HAL: 54M30 console 640x480, font 8x12, 80x40 chars, fb 81000000
+HAL: cuda clock e6c3acd4 -> 2026-9-6 23:50:44
+HAL: module symc810.sys / SCSIPORT.SYS / Disk.sys / CLASS2.SYS / Fastfat.sys
+1 System Processor [64 MB Memory]
+HAL: HalAssignSlotResources bus 0 dev 17 fn 0 -> 4 resources
+  ... 59 x TranslateBusAddress, ports 0x3b0-0x3df and 0x1ce/0x1cf ...
+HAL: HalAssignSlotResources bus 0 dev 15 fn 0 -> 2 resources
+
+*** STOP: 0x00000050 (0xEE315C98,0x00000000,0x00000000,0x00000000)
+PAGE_FAULT_IN_NONPAGED_AREA
+```
+
+`setup block 00000000` is the line that matters: this is not Setup. It is `\WINNT` starting as
+an installed system, on the HAL Setup copied — byte-identical to `build/hal.dll`, checked off the
+disk with `tools/fatcat.py`.
+
+**It was ours.** A conditional breakpoint on the DSI vector — `dar == 0xEE315C98`, so one fault
+out of a boot's thousands — gave `SRR0`, and `SRR0` was the *first* instruction of an NT import
+glue stub: `lwz r11,-32360(r2)`, the TOC load. So `r2` was wrong, not the memory.
+
+Fingerprinting the caller's argument set-up against all 53 drivers on the disk named the module:
+**`MGA_MIL.SYS`**, the Matrox Millennium miniport, which NT was trying because it tries every
+video miniport in the registry until one claims the adapter. Its TOC should have been
+`0xEE321280`; `r2` held `0xEE31DB04` — a **code address**, and the instruction after the `bl`
+that entered the stub. That same value was still sitting in the caller's frame at `4(r1)`.
+
+`4(r1)` is where NT's import glue saves the caller's TOC. It is also, in the **SVR4** ABI we
+compile for, the caller's **LR save slot** — and our prologues are
+`stwu 1,-48(1) ; stw 0,52(1)`, which is `4(caller's r1)`. Microsoft's put LR in a callee-saved
+register and the TOC at `8(r1)`, never at 4. **Every HAL export that saved LR had been
+destroying its caller's saved TOC since the first boot**, and the caller's `lwz r2,4(r1)`
+afterwards loaded our return address into `r2`.
+
+`thunk.S` already guarded the *other* direction, and its comment names the hazard precisely. The
+fix gives it the missing half: `tools/mkstubs.py` points each export descriptor at a thunk that
+takes a 64-byte frame of its own before calling the C function, and `DEFINE_DESC` does the same
+for the three descriptors the kernel calls directly. Eight instructions per crossing.
+
+One arithmetic discrepancy held it up for an hour and is worth keeping: `r2` derived from `DAR`
+came out four bytes below the value plainly sitting in the slot. `0xEE315C98 ^ 4 = 0xEE315C9C` —
+**the emulator reports `DAR` with the little-endian address munge still applied**, and so does
+the address NT prints on the blue screen. Lesson 6, a second time.
+
+**Bought.** The `0x50` is gone and the installed system completes NT's I/O initialisation: both
+53C825As with adapters, interrupt vectors and real interrupts; `IoReadPartitionTable` over each
+disk; the video device assigned. Full write-up:
+[`docs/2026-09-14-the-toc-slot.md`](docs/2026-09-14-the-toc-slot.md).
+
+Worth re-testing deliberately, without over-claiming it here: that run applied **no**
+`VideoPortVerifyAccessRanges` bypass (ledger row 6) and no video conflict appeared. A video
+driver whose TOC we were corrupting is a plausible cause of wall 25's unexplained
+`ERROR_INVALID_PARAMETER`. *(It was not — see wall 25's 15 September re-measurement. The
+`ERROR_INVALID_PARAMETER` is our own `HalTranslateBusAddress` refusing the aperture, and there
+was never a conflict to appear.)*
+
+![PAGE_FAULT_IN_NONPAGED_AREA, drawn by the HAL's own framebuffer console](traces/2026-09-07-boot-01-bugcheck-0x50.png)
+
+## Part 13 — Graphics
+
+### Wall 50 — one file's data inside the file allocation table
+
+**Symptom.** Every fresh install was quietly damaged. NT booted and then stopped on
+`Msfs.SYS` with `STATUS_FILE_CORRUPT_ERROR`; walking the FAT from the host found **70 to 98
+files whose cluster chain was shorter than the size in their directory entry**, always in a
+band around `M`/`N` — `MSFS`, `MUP`, `NDIS`, `NET*`, `NDDE*`.
+
+**Two wrong diagnoses first**, both worth recording because each looked convincing.
+
+*The capture.* The obvious reading was that the disk image had been snapshotted before NT
+flushed, and the cure was to press Enter at the restart prompt and capture later. It was not:
+driving the restart to `Restarting computer…` and capturing after the shutdown changed nothing.
+
+*The cache.* The next reading was coherency — a dirty FAT sector still in the 604's write-back
+cache while the bus-master 53C825A DMAed the stale copy out. `HalFlushIoBuffers` did bail out
+for everything except a paging read, so the theory fitted the code. Sweeping the range with
+`dcbf` in both directions changed nothing either: Bandit is coherent with the 604, exactly as
+`dma.c`'s own header had said all along. The change was reverted.
+
+**What it actually was.** The corrupted FAT entries decoded as *PowerPC machine code*, and
+searching the image found the same block in three places: both FAT copies, and its legitimate
+home in a data cluster belonging to `\WINNT\SYSTEM32\NOTEPAD.EXE` (`MSNCDET.DLL` on the next
+run). A file's data was landing on top of NT's cached FAT page, and NT was dutifully writing
+that page back to both copies of the FAT.
+
+Reading the code had not found it, so the emulator was made to say it instead: `scripts53c8xx.c`
+now logs the host address and byte count of **every** bus-master transfer, and `run-hal.py`
+gained `--log CAT=LEVEL`. Pairing each write that landed on a FAT sector with the buffer it came
+from gave the tell in one run — every corrupting write's buffer began at a **non-zero page
+offset**: `$0194E200`, `$00BD3200`, `$019D4400`, `$01848200`. Page-aligned buffers were never
+harmed.
+
+`IoMapTransfer` tells the chip how many bytes from one physical address are safe to transfer in
+a single run, and extended that run with
+
+```c
+pages[idx + (run >> 12)] == pages[idx] + (run >> 12)
+```
+
+With `inpage = 0x200` the first run is `4096 - 0x200 = 3584`, so `run >> 12` is **0**: the test
+compares `pages[idx]` with itself, passes trivially, and swallows the next whole page without
+ever checking it is contiguous. The check is permanently one page behind. The HAL then promises
+"5120 contiguous bytes" across two pages that are not, and every byte past the first page
+boundary is read from — or written to — whatever happens to live at the adjacent physical page.
+With `inpage == 0` the index comes out right by accident, which is why the great majority of I/O
+was fine and the damage looked random.
+
+The page a run would grow into is at `(run + inpage) >> 12`, not `run >> 12`.
+
+**Bought.** A fresh install verifies clean three ways: every cluster chain covers its file's
+size, all seven registry hives are complete — `SYSTEM` and `DEFAULT` had been truncated in
+*every* previous install — and the FAT regions a crude "does this look like data" heuristic
+flagged turn out to be plain sequential allocation.
+
+**The lesson is the method, not the bug.** Three explanations fitted the evidence; two were
+wrong and both were disproved by *trying* them, cheaply, and watching nothing change. The one
+that was right came from making the machine report what it actually did.
+
+### Wall 51 — the display driver NT tried first
+
+**Symptom.** With a clean install, the boot reached `win32k` and stopped:
+`STOP: c0000143 {Missing System File} — the required system file DISPLAY_DRIVER.DLL is bad or
+missing.` There is no such file: `DISPLAY_DRIVER.DLL` is NT's placeholder, and the string
+appears nowhere in the hive.
+
+**What it was.** Not a missing driver. NT splits video into a *miniport* that programs the chip
+(`cirrus.sys`, which must know the hardware) and a *display driver* that `win32k` loads
+(`vga.dll`, `cirrus.dll`, `framebuf.dll` — any of which can be generic). Reading the installed
+`SYSTEM` hive showed Setup had written the x86-oriented default:
+
+```
+System\ControlSet001\Services\cirrus\Device0
+    InstalledDisplayDrivers = 'vga | cirrus | vga256 | vga64K'
+```
+
+NT tries them in order, so it reached for `vga.dll` first and got nowhere. All three DLLs are
+present, intact, and PowerPC images; the miniport was healthy too — it logged 59 VGA-port
+translations through the HAL, the same count as the Setup run where video had worked.
+
+**Fixed** by reordering the value to `cirrus | framebuf | vga`: the driver matched to the
+miniport first, the generic linear-framebuffer driver RISC NT normally uses second, VGA last.
+
+**Bought.** **GUI-mode Setup, in graphics mode, on the Cirrus** — the wizard with its window
+chrome and logo, copying `E:\ppc\CONFIG.NT_` to `D:\WINNT\system32\CONFIG.TMP` at 640x480
+through this HAL's drive letters, both 53C825A controllers and `win32k`.
+
+![Setup copying files in graphics mode](traces/2026-09-14-gui-01-copying-files.png)
+
+![The Windows NT Setup wizard](traces/2026-09-14-gui-02-setup-wizard.png)
+
+*Two things are still owed here.* The desktop background renders noisily, which is a display
+driver or emulated-Cirrus question nobody has looked at yet. And ledger row 6 is still defeated
+— at this point as a one-word patch to `VIDEOPRT.SYS` on the image rather than a memory poke,
+which at least needs no breakpoint timing, and which taught us that NT verifies driver PE
+checksums: the first attempt died with `STATUS_IMAGE_CHECKSUM_MISMATCH` until the checksum was
+recomputed. *(Superseded on 15 September: the bypass was never needed. Wall 25 below.)*
+
 ## The ledger of workarounds
 
 Everything above that is *not* a fix, kept in one place so it is never forgotten:
@@ -1023,18 +1519,23 @@ Everything above that is *not* a fix, kept in one place so it is never forgotten
 | 1 | Two `nop`s for the veneer's `claim` failures | patches a Microsoft binary in memory | inherited from the thread; needs a story for real hardware |
 | 2 | `OFClose` nret, two words | same | a veneer replacement, or upstream acceptance |
 | 3 | `partition(1)` and `:0` strings blanked | same | same |
-| 4 | `VrOpen`'s partition branch `nop`ed (wall 22) | same | same |
+| 4 | `VrOpen`'s partition branch `nop`ed (wall 22) | same — and **CD-only**: wall 46 showed it makes an MBR disk boot impossible, because `partition(N)` then opens the whole device | a device-aware patch, or a veneer replacement |
 | 5 | Eleven bytes renaming the veneer's SCSI model (wall 16) | same | a `TXTSETUP` `[Map.SCSI]` addition on an OEM disk would be cleaner |
-| 6 | `VideoPortVerifyAccessRanges` bypass (wall 25) | **defeats a correct conflict check** | a video driver that does not claim the `0xA0000` aperture |
-| 7 | `usbadb.sys`, a binary we may not redistribute | GPL-2.0 with no published source, so GPL §3 cannot be satisfied | our own port driver, from the `fpsidrv` template, on the HAL half that already exists |
-| 8 | The driver written over `\PPC\I8042PRT.SYS` | abuses a name SETUPLDR hardcodes | a proper OEM driver disk (`winnt.sif` + `txtsetup.oem`) |
-| 9 | `SYSTEMPARTITION` synthesised by the HAL from the loader's ARC disk list (wall 35) | on real ARC hardware it is NVRAM, written by `ARCINST.EXE`; the HAL guessing it is policy in the wrong place | an environment store backed by Open Firmware's own `nvram`, or an `ARCINST` equivalent for this machine |
-| 10 | The ARC environment does not survive a reboot | it is plain memory in the HAL | the same nvram-backed store |
-| 11 | Both partitions pre-created by `tools/mkarcdisk.py`, so Setup never runs its own partition-creation path (wall 39) | dodges the `setupdd.sys` crash rather than fixing it; a real install must be able to partition a blank disk from inside Setup | the drive-letter fix, after which Setup's own create-and-format path is worth retrying |
-| 12 | The MBR and system partition spliced into the checkpoint's copy-on-write delta at run time (`run-hal.py --disk-delta`) | a test-rig convenience, not a property of the machine: it exists so the disk boots without an MBR and gains one before SETUPLDR reads signatures (wall 36) | a cold-boot chain that starts from an already-partitioned disk, once the veneer's ARC path for it is trusted |
+| 6 | The display miniport's legacy-VGA access range moved from `0xA0000` to `0x90000000` (wall 25) | edits a Microsoft driver's data. **Supersedes the `VideoPortVerifyAccessRanges` bypass**, which was never defeating a conflict check — it was ignoring our HAL's correct refusal to translate an address this board cannot reach | a video driver that does not claim the aperture at all, or a `[Display]` entry that configures one; this is the nearest thing to it that an OEM disk can deliver |
+| 7 | ~~The HAL delivered by overwriting `HALEAGLE.DLL` and selected as *MOTOROLA PowerStack*~~ **retired (wall 44)** | it impersonated another machine's HAL, and broke the moment Setup tried to install it | `tools/mkoem.py`: our own `[Computer]`, `[Hal.Load]` and `[hal]` entries, and `HALSHINR.DLL` by name |
+| 8 | ~~The `TXTSETUP.SIF` and `\PPC` directory patches applied to a *user's* CD image at run time~~ **retired (15 September)** | they edited proprietary media, even if only in a copy-on-write layer | `tools/mkbootfloppy.py`: a real OEM device-support disk, which is the mechanism those patches were imitating. A stock CD, MD5 `ab37556d…`, now boots and is offered *Apple Network Server 500/700* from the floppy |
+| 9 | `usbadb.sys`, a binary we may not redistribute | GPL-2.0 with no published source, so GPL §3 cannot be satisfied | our own port driver, from the `fpsidrv` template, on the HAL half that already exists |
+| 10 | ~~The driver written over `\PPC\I8042PRT.SYS`~~ **retired (15 September)** | it abused a name SETUPLDR hardcodes | `tools/mkbootfloppy.py --adb-driver`: the driver is a file on an OEM disk, offered under `[SCSI]` and picked with `S` / `Other` at the mass-storage screen. SETUPLDR loads any number of SCSI-class drivers in a loop and does not check what they are, so a driver that creates `\Device\KeyboardPort` works there — which is how maciNTosh has always shipped the same driver. Row 9 still stands: the binary is still not ours |
+| 11 | `SYSTEMPARTITION` synthesised by the HAL from the loader's ARC disk list (wall 35) | on real ARC hardware it is NVRAM, written by `ARCINST.EXE`; the HAL guessing it is policy in the wrong place | an environment store backed by Open Firmware's own `nvram`, or an `ARCINST` equivalent for this machine |
+| 12 | The ARC environment does not survive a reboot | it is plain memory in the HAL | the same nvram-backed store |
+| 13 | Both partitions pre-created by `tools/mkarcdisk.py`, so Setup never runs its own partition-creation path (wall 39) | dodges the `setupdd.sys` crash rather than fixing it; a real install must be able to partition a blank disk from inside Setup | the drive-letter fix, after which Setup's own create-and-format path is worth retrying |
+| 14 | The MBR and system partition spliced into the checkpoint's copy-on-write delta at run time (`run-hal.py --disk-delta`) | a test-rig convenience, not a property of the machine: it exists so the disk boots without an MBR and gains one before SETUPLDR reads signatures (wall 36) | a cold-boot chain that starts from an already-partitioned disk, once the veneer's ARC path for it is trusted |
+| 15 | `SYSTEM` and `DEFAULT` restored from their own `.SAV` copies (wall 48) | the captured image is incomplete — **49 files** have a cluster chain shorter than their size, so this repairs two of the rig's casualties rather than the cause | capturing the disk image after Setup's restart prompt has flushed; this is now the blocker |
+| 16 | The ARC environment injected into the veneer at OSLOADER's first query (wall 45 onward) | a real machine reads it from NVRAM; this writes ten variables into the veneer's own table from outside | the nvram-backed environment store rows 11 and 12 already ask for |
+| 17 | Six bytes renaming the veneer's `floppy` device name to `swim3` | patches a Microsoft binary, like rows 1-5 — and it is the only thing that gives the internal drive an ARC name SETUPLDR can use (`multi(0)disk(0)fdisk(0)` instead of `multi(0)other(0)other(0)`) | a replacement ARC firmware, which would classify its own devices. See [`docs/2026-09-15-the-boot-floppy.md`](docs/2026-09-15-the-boot-floppy.md) §4.2 |
 
-Workarounds 1–5 all live in the veneer and all exist because Microsoft's ARC shim was written for
-a machine whose firmware behaves slightly differently. They are load-time memory pokes, they are
+Workarounds 1–5 and 17 all live in the veneer and all exist because Microsoft's ARC shim was
+written for a machine whose firmware behaves slightly differently. They are load-time memory pokes, they are
 scripted, and they are documented — but a published project needs a better answer than "type
 these into Open Firmware".
 
@@ -1058,7 +1559,7 @@ Microsoft tool anywhere in the build:
 And on the emulator side, one committed fidelity improvement: the four Cirrus registers a driver
 identifies the part by.
 
-## Eight things this taught, that generalise
+## Ten things this taught, that generalise
 
 1. **A missing symptom is not evidence.** Wall 20 — "the interrupt never arrives" — was a
    stubbed allocator four layers up. The interrupt path was healthy the entire time.
@@ -1075,8 +1576,9 @@ identifies the part by.
    *after* the instruction executes, so a breakpoint on a faulting load never fires for the
    fault — 18,171 hits on the crashing instruction, every one healthy, and every conclusion drawn
    from the wrong instruction (wall 39). The shell's memory peek does not apply the little-endian
-   address munge either. Calibrate a debugger against a value you already know before you trust
-   what it tells you.
+   address munge either — nor does `DAR`, nor the address NT itself prints on a blue screen, so
+   a `0x50`'s parameter lands four bytes from the address the code asked for (wall 49).
+   Calibrate a debugger against a value you already know before you trust what it tells you.
 7. **A borrowed binary carries its author's assumptions about hardware you both thought you
    shared.** `usbadb.sys` reads ADB `0x3B`–`0x3E` as the arrow keys and `0x7B`–`0x7E` as the
    right-hand modifiers — the older Apple keyboard's convention. Nothing in the header said so;
@@ -1085,3 +1587,14 @@ identifies the part by.
    of existing code — *what happens on the second call?* — and it was sitting directly in front
    of the next thing to be attempted. Every other wall here was found by a machine stopping,
    which on a forty-minute boot costs a great deal more than reading does.
+9. **A workaround is only correct in the situation that produced it, and nothing marks where that
+   situation ends.** Walls 46 and 47 are both patches of ours, written for the CD and for a
+   shorter path, still applied where neither held: one made an MBR disk unbootable, the other
+   erased a string the firmware needed. Both were found by reading the ledger's rows back against
+   a new situation — which is the second, unadvertised reason to keep a ledger. It is not only a
+   confession; it is a checklist for the next context.
+10. **When two ABIs meet, write down which one owns each byte of the frame — then guard the seam
+   in both directions.** `thunk.S` had the hazard exactly right in its comment and solved it for
+   calls *into* the kernel; nobody asked the same question about calls *out of* it, and the HAL
+   spent five days corrupting a word of every caller's stack (wall 49). A comment that states an
+   invariant is an invitation to check every place it applies.

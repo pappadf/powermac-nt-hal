@@ -151,10 +151,46 @@ VOID HalpSeedEnvironment(PVOID ArcDiskInformation)
     }
 }
 
-/* Until the Cuda RTC is read, report a fixed moment; NT wants a sane year. */
+/* Shift-and-subtract long division.  A freestanding build links no libgcc, so a 64-bit divide
+ * has no __udivdi3 to call; the quotient is 64 bits wide because seconds-since-1601 is not a
+ * 32-bit quantity. */
+ULONGLONG HalpDivU64(ULONGLONG n, ULONG d)
+{
+    ULONGLONG q = 0, rem = 0;
+    if (d == 0) return 0;
+    for (int i = 63; i >= 0; i--) {
+        rem = (rem << 1) | ((n >> i) & 1);
+        if (rem >= d) { rem -= d; q |= 1ULL << i; }
+    }
+    return q;
+}
+
+/* The clock lives in Cuda, as seconds since 1904-01-01; NT counts 100 ns units since
+ * 1601-01-01.  The two epochs are 110,667 days apart. */
+#define MAC_EPOCH_TO_1601   9561628800ULL
+#define NT_UNITS_PER_SECOND 10000000ULL
+
 BOOLEAN HalQueryRealTimeClock(PTIME_FIELDS TimeFields)
 {
-    TimeFields->Year = 2026; TimeFields->Month = 9; TimeFields->Day = 6;
+    ULONG seconds;
+    LARGE_INTEGER time;
+
+    if (HalpCudaGetTime(&seconds)) {
+        static BOOLEAN shown;
+        time = (LARGE_INTEGER)(((ULONGLONG)seconds + MAC_EPOCH_TO_1601) * NT_UNITS_PER_SECOND);
+        RtlTimeToTimeFields(&time, TimeFields);
+        if (!shown) {                   /* once: a clock that answers with nonsense is worse
+                                         * than one that does not answer at all */
+            shown = TRUE;
+            HalpPrint("HAL: cuda clock %x -> %d-%d-%d %d:%d:%d\n", seconds, TimeFields->Year,
+                      TimeFields->Month, TimeFields->Day, TimeFields->Hour, TimeFields->Minute,
+                      TimeFields->Second);
+        }
+        return TRUE;
+    }
+    /* Cuda did not answer.  Report a plausible moment rather than 1601, which NT shows as a
+     * corrupt clock and which makes every installed file's timestamp absurd. */
+    TimeFields->Year = 2026; TimeFields->Month = 9; TimeFields->Day = 7;
     TimeFields->Hour = 12; TimeFields->Minute = 0; TimeFields->Second = 0;
     TimeFields->Milliseconds = 0; TimeFields->Weekday = 0;
     return TRUE;
@@ -162,8 +198,15 @@ BOOLEAN HalQueryRealTimeClock(PTIME_FIELDS TimeFields)
 
 BOOLEAN HalSetRealTimeClock(PTIME_FIELDS TimeFields)
 {
-    UNREFERENCED_PARAMETER(TimeFields);
-    return FALSE;
+    LARGE_INTEGER time;
+    ULONGLONG seconds;
+
+    if (!RtlTimeFieldsToTime(TimeFields, &time)) return FALSE;
+    seconds = HalpDivU64((ULONGLONG)time, (ULONG)NT_UNITS_PER_SECOND);
+    if (seconds < MAC_EPOCH_TO_1601) return FALSE;          /* before Cuda's epoch */
+    seconds -= MAC_EPOCH_TO_1601;
+    if (seconds > 0xFFFFFFFFULL) return FALSE;              /* after 2040, when it runs out */
+    return HalpCudaSetTime((ULONG)seconds);
 }
 
 BOOLEAN HalMakeBeep(ULONG Frequency)
@@ -250,6 +293,51 @@ static BOOLEAN HalpSameDevice(const char *a, PSTRING b)
     return a[i] == 0;
 }
 
+/* One disk's recognised partitions, as IoReadPartitionTable numbers them.  Filled in by asking
+ * disk.sys, through the raw Partition0 device, for the table the HAL itself parses. */
+#define HALP_MAX_DISKS 8
+#define HALP_MAX_PARTS 24
+static struct {
+    UCHAR Count;
+    UCHAR Number[HALP_MAX_PARTS];       /* the N in \Device\HarddiskD\PartitionN */
+    BOOLEAN Primary[HALP_MAX_PARTS];    /* in the MBR's own four slots, not the extended chain */
+} HalpDiskParts[HALP_MAX_DISKS];
+
+static VOID HalpScanDisk(ULONG disk)
+{
+    char name[64];
+    WCHAR wide[64];
+    UNICODE_STRING device;
+    PFILE_OBJECT file = NULL;
+    PDEVICE_OBJECT dev = NULL;
+    PDRIVE_LAYOUT_INFORMATION layout = NULL;
+    ULONG i = 0;
+
+    HalpFormatDevice(name, "\\Device\\Harddisk", disk, "\\Partition0");
+    for (; name[i] && i < 63; i++) wide[i] = (WCHAR)(UCHAR)name[i];
+    wide[i] = 0;
+    RtlInitUnicodeString(&device, wide);
+    if (!NT_SUCCESS(IoGetDeviceObjectPointer(&device, FILE_READ_DATA, &file, &dev))) {
+        HalpPrint("HAL: drive letters: cannot open %s\n", name);
+        return;
+    }
+    /* ReturnRecognizedPartitions FALSE, so the layout keeps its four-entries-per-table shape:
+     * entries 0..3 are the MBR's own slots and everything after them is the extended chain.
+     * A recognised partition is one IoReadPartitionTable gave a nonzero number to. */
+    if (NT_SUCCESS(IoReadPartitionTable(dev, 512, FALSE, &layout)) && layout != NULL) {
+        for (ULONG k = 0; k < layout->PartitionCount && HalpDiskParts[disk].Count < HALP_MAX_PARTS; k++) {
+            PPARTITION_INFORMATION p = &layout->PartitionEntry[k];
+            UCHAR n;
+            if (p->PartitionNumber == 0) continue;
+            n = HalpDiskParts[disk].Count++;
+            HalpDiskParts[disk].Number[n] = (UCHAR)p->PartitionNumber;
+            HalpDiskParts[disk].Primary[n] = (BOOLEAN)(k < 4);
+        }
+        ExFreePool(layout);
+    }
+    ObDereferenceObject(file);
+}
+
 VOID IoAssignDriveLetters(PLOADER_PARAMETER_BLOCK LoaderBlock, PSTRING NtDeviceName, PUCHAR NtSystemPath, PSTRING NtSystemPathString)
 {
     UNREFERENCED_PARAMETER(LoaderBlock);
@@ -262,12 +350,44 @@ VOID IoAssignDriveLetters(PLOADER_PARAMETER_BLOCK LoaderBlock, PSTRING NtDeviceN
         HalpMakeDosDevice((UCHAR)('A' + i), name);
         if (HalpSameDevice(name, NtDeviceName)) bootLetter = (UCHAR)('A' + i);
     }
+    ULONG disks = cfg->DiskCount < HALP_MAX_DISKS ? cfg->DiskCount : HALP_MAX_DISKS;
+    for (ULONG d = 0; d < disks; d++) HalpScanDisk(d);
+
+    /* NT's order, and Setup assumes it: the first primary partition of each disk, then every
+     * logical drive, then the primaries that were left over, and only then the CD-ROMs.  Giving
+     * a letter to just Partition1 of each disk — which is what this used to do — leaves the
+     * volume Setup installs to with no \DosDevices\ entry at all, and hands its letter to the
+     * CD instead. */
     UCHAR letter = 'C';
-    for (ULONG i = 0; i < cfg->DiskCount && letter <= 'Z'; i++) {
-        HalpFormatDevice(name, "\\Device\\Harddisk", i, "\\Partition1");
-        HalpMakeDosDevice(letter, name);
-        if (HalpSameDevice(name, NtDeviceName)) bootLetter = letter;
-        letter++;
+    for (ULONG pass = 0; pass < 3 && letter <= 'Z'; pass++) {
+        for (ULONG d = 0; d < disks && letter <= 'Z'; d++) {
+            ULONG first = HALP_MAX_PARTS;               /* index of this disk's first primary */
+            for (ULONG k = 0; k < HalpDiskParts[d].Count; k++)
+                if (HalpDiskParts[d].Primary[k]) { first = k; break; }
+
+            if (HalpDiskParts[d].Count == 0) {
+                /* The scan failed.  Fall back to the old behaviour rather than leaving the
+                 * disk with no letter whatsoever. */
+                if (pass != 0) continue;
+                HalpFormatDevice(name, "\\Device\\Harddisk", d, "\\Partition1");
+                HalpMakeDosDevice(letter, name);
+                if (HalpSameDevice(name, NtDeviceName)) bootLetter = letter;
+                letter++;
+                continue;
+            }
+            for (ULONG k = 0; k < HalpDiskParts[d].Count && letter <= 'Z'; k++) {
+                BOOLEAN primary = HalpDiskParts[d].Primary[k];
+                if (pass == 0 && k != first) continue;              /* the first primary */
+                if (pass == 1 && primary) continue;                 /* the logical drives */
+                if (pass == 2 && (!primary || k == first)) continue; /* the rest of the primaries */
+                ULONG n = HalpFormatDevice(name, "\\Device\\Harddisk", d, "\\Partition");
+                n += HalpFormatDevice(name + n, "", HalpDiskParts[d].Number[k], "");
+                HalpMakeDosDevice(letter, name);
+                if (HalpSameDevice(name, NtDeviceName)) bootLetter = letter;
+                HalpPrint("HAL: %c: -> %s\n", letter, name);
+                letter++;
+            }
+        }
     }
     for (ULONG i = 0; i < cfg->CdRomCount && letter <= 'Z'; i++) {
         HalpFormatDevice(name, "\\Device\\CdRom", i, "");

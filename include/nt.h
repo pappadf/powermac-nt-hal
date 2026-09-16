@@ -69,7 +69,23 @@ typedef ULONG KSPIN_LOCK, *PKSPIN_LOCK;
 
 /* A function pointer in the NT PowerPC ABI is the address of a two-word descriptor. */
 typedef struct _FUNC_DESC { PVOID Entry; ULONG Toc; } FUNC_DESC, *PFUNC_DESC;
-#define DEFINE_DESC(f) const FUNC_DESC f##_desc = { (PVOID)(f), 0 }
+/* A descriptor the *kernel* calls must point at a thunk, never straight at a C function: we
+ * compile for SVR4, where the LR save slot is 4(caller's r1), and NT PowerPC keeps the caller's
+ * saved TOC there.  A C function called directly by the kernel overwrites it, and the caller's
+ * `lwz r2,4(r1)` afterwards loads a code address into r2 (STORY.md wall 49).  tools/mkstubs.py
+ * does the same for the HAL's exports; thunk.S guards the opposite direction. */
+#define DEFINE_DESC(f)                                                                  \
+    __asm__(".text\n\t.p2align 2\n"                                                     \
+            ".type xthunk_" #f ",@function\n"                                           \
+            "xthunk_" #f ":\n"                                                          \
+            "\tmflr 0\n\tstwu 1, -64(1)\n\tstw 0, 60(1)\n"                              \
+            "\tbl " #f "\n"                                                             \
+            "\tlwz 0, 60(1)\n\taddi 1, 1, 64\n\tmtlr 0\n\tblr\n");                      \
+    extern void xthunk_##f(void);                                                       \
+    /* the only reference to f is inside the asm string, which the compiler does not read, \
+     * so a static handler would be discarded as unused before the assembler sees it */    \
+    static void *const f##_keepalive __attribute__((used)) = (void *)(f);                  \
+    const FUNC_DESC f##_desc = { (PVOID)(xthunk_##f), 0 }
 #define DESC(f) ((PVOID)&f##_desc)
 
 /* ---- IRQL, vectors (ppcdef.h contract) ------------------------------------------------ */
@@ -328,6 +344,13 @@ BOOLEAN RtlTimeFieldsToTime(PTIME_FIELDS TimeFields, PLARGE_INTEGER Time);
 PVOID ExAllocatePool(ULONG PoolType, ULONG NumberOfBytes);
 VOID ExFreePool(PVOID P);
 PCONFIGURATION_INFORMATION IoGetConfigurationInformation(VOID);
+typedef struct _FILE_OBJECT *PFILE_OBJECT;
+#define FILE_READ_DATA 0x0001
+/* Opens a device by name and hands back both the file object (to dereference afterwards) and
+ * the device object the HAL can send IRPs to. */
+NTSTATUS IoGetDeviceObjectPointer(PUNICODE_STRING ObjectName, ULONG DesiredAccess,
+                                  PFILE_OBJECT *FileObject, PDEVICE_OBJECT *DeviceObject);
+VOID ObDereferenceObject(PVOID Object);
 PIRP IoBuildSynchronousFsdRequest(ULONG MajorFunction, PDEVICE_OBJECT DeviceObject, PVOID Buffer,
                                   ULONG Length, PLARGE_INTEGER StartingOffset, PKEVENT Event,
                                   PIO_STATUS_BLOCK IoStatusBlock);

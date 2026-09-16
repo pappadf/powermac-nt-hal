@@ -23,11 +23,16 @@ their own, so booting NT on one needs
 [`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit)'s loader as well as a HAL.
 The door is deliberately left open; the claim is only about the ANS.
 
-**Two names.** The repository is `powermac-nt-hal`; the file it builds for the Network Server is
-`HALSHINR.DLL`, after Apple's codename for that logic board ("Shiner") squeezed into the 8.3
-filename NT's loader expects — the same convention as Microsoft's own `HALEAGLE.DLL` and
-maciNTosh's `halgoss.dll`. The HAL calls itself `halshinr` in its boot banner and build tag for
-that reason. A sibling for desktop TNT machines would be a second HAL from the same sources.
+**Three names, and it is worth being precise.** The repository is `powermac-nt-hal`. The build
+produces `build/hal.dll`, whose *internal* PE export name is `HAL.dll` — that one is not a
+choice, because `NTKRNLMP.EXE` imports from the literal string `HAL.dll`. On the CD and on the
+installed system it is **`HALSHINR.DLL`**, after Apple's codename for this logic board ("Shiner")
+in the 8.3 form NT's loader expects, the same convention as Microsoft's own `HALEAGLE.DLL` and
+maciNTosh's `halgoss.dll`; the HAL calls itself `halshinr` in its boot banner for that reason.
+[`tools/mkoem.py`](tools/mkoem.py) is what puts that name on the CD, together with a computer
+type of its own — Setup's hardware menu offers *"Apple Network Server 500/700"*, and installs
+`HALSHINR.DLL` as the system's `hal.dll`. A sibling for desktop TNT machines would be a second
+HAL built from the same sources.
 
 Windows NT 4.0 Setup, running on an emulated Network Server 500, reading a partition table
 through this HAL:
@@ -54,8 +59,10 @@ where it stops:
 | Storage | both Symbios 53C825A controllers found, the CD is the boot device, `disk.sys` and `fastfat` mount volumes |
 | Keyboard | the ADB keyboard works — Cuda transport in the HAL, real keystrokes into Setup |
 | Video | `cirrus.sys` initialises the 54M30 |
-| Setup | Welcome → mass storage → licence → hardware confirmation → partition list → create and format → `\WINNT` → *"Creating directory \WINNT…"* |
-| The next wall | `IoAssignDriveLetters` assigns a letter to only the *first* partition of each disk, so the volume Setup installs to has no `\DosDevices\` entry — Setup calls it `D:`, which we gave to the CD, and `setupdd.sys` then reads a `UNICODE_STRING`'s `Length` where it wanted its `Buffer`. Cause identified, fix not yet written; see the charter, §7 |
+| Clock | the real time, read from Cuda, so installed files are dated correctly |
+| Its own identity | Setup's hardware menu offers **"Apple Network Server 500/700"** and installs `HALSHINR.DLL` as the system's `hal.dll` — a `TXTSETUP.SIF` entry of our own, not another machine's HAL borrowed ([`tools/mkoem.py`](tools/mkoem.py)) |
+| Setup | Welcome → mass storage → licence → hardware confirmation → partition list → format → `\WINNT` → copying → **"This portion of Setup has completed successfully"**, with no bugcheck in the run |
+| The next wall | the restart. Setup wrote the installed system's boot configuration through `HalSetEnvironmentVariable`, but that store is in RAM — this machine has no ARC NVRAM — so a reboot loses the `OSLOADER` path the firmware would need |
 
 Screenshots of every screen are in [`traces/`](traces/).
 
@@ -99,7 +106,7 @@ file.
 ## The story
 
 The interesting document in this repository is **[`STORY.md`](STORY.md)** — every wall hit on
-the way here, what each one turned out to be, and what it cost. Forty of them so far,
+the way here, what each one turned out to be, and what it cost. Forty-four of them so far,
 including a few that are worth reading whatever you work on:
 
 - **The interrupt that never arrived** was not an interrupt problem: `HalAllocateAdapterChannel`

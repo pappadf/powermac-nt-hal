@@ -77,11 +77,50 @@ PPHYSICAL_ADDRESS IoMapTransfer(PPHYSICAL_ADDRESS Result, PADAPTER_OBJECT Adapte
     UNREFERENCED_PARAMETER(Adapter); UNREFERENCED_PARAMETER(MapRegisterBase); UNREFERENCED_PARAMETER(WriteToDevice);
     /* one physically contiguous run at a time, taken from the MDL's page array */
     PULONG pages = (PULONG)(Mdl + 1);
+    ULONG limit = Mdl->ByteOffset + Mdl->ByteCount;
+
+    /* CurrentVa is "a virtual address in the buffer", and which address space it is in depends
+     * on the caller: an MDL built for a user buffer has StartVa in user space and
+     * MappedSystemVa in kernel space, and a driver that took MmGetSystemAddressForMdl hands us
+     * the kernel one.  Subtracting the wrong base would give a wild page index and send the
+     * transfer to a physical address from elsewhere in the page array, so take whichever base
+     * puts CurrentVa inside the buffer, and refuse loudly if neither does.
+     *
+     * This is a latent bug found while chasing wall 50, NOT its cause: the complaint below has
+     * never fired on this machine.  The corruption was the contiguity check further down. */
     ULONG offset = (ULONG)CurrentVa - (ULONG)Mdl->StartVa;      /* StartVa is page aligned */
+    if (offset > limit && Mdl->MappedSystemVa) {
+        ULONG alt = (ULONG)CurrentVa - (ULONG)Mdl->MappedSystemVa;
+        if (alt <= limit) offset = alt;
+    }
+    if (offset > limit) {                                       /* neither: refuse, loudly */
+        static ULONG complained;
+        if (complained++ < 8)
+            HalpPrint("HAL: IoMapTransfer: CurrentVa %x outside MDL (StartVa %x sysva %x "
+                      "off %x count %x)\n", CurrentVa, Mdl->StartVa, Mdl->MappedSystemVa,
+                      Mdl->ByteOffset, Mdl->ByteCount);
+        *Length = 0;
+        *Result = (PHYSICAL_ADDRESS)0;
+        return Result;
+    }
     ULONG idx = offset >> 12, inpage = offset & 0xFFF;
-    ULONG run = 4096 - inpage, total = Mdl->ByteOffset + Mdl->ByteCount - offset;
-    while (run < *Length && run < total && idx + (run >> 12) < ((Mdl->ByteOffset + Mdl->ByteCount + 4095) >> 12) &&
-           pages[idx + (run >> 12)] == pages[idx] + (run >> 12)) run += 4096;
+    ULONG run = 4096 - inpage, total = limit - offset, npages = (limit + 4095) >> 12;
+    /* Extend the run only over pages we have actually checked are contiguous.  The page a run of
+     * `run` bytes would grow into is at index (run + inpage) >> 12, NOT run >> 12: for a buffer
+     * that does not start on a page boundary the latter is one page behind, so the first
+     * extension compares pages[idx] with itself, passes, and swallows the next page unchecked.
+     * The chip is then told "one contiguous run" across two pages that are not, and every byte
+     * past the first page boundary is read from — or written to — whatever else lives at the
+     * adjacent physical page.  That is how blocks of one file ended up inside the cached FAT
+     * page and from there on disk, truncating ~70 files of a fresh install (STORY.md wall 50).
+     * It only bit non-page-aligned buffers, which is why most I/O was fine. */
+    for (;;) {
+        ULONG next = (run + inpage) >> 12;              /* the page this run would grow into */
+        if (run >= *Length || run >= total) break;
+        if (idx + next >= npages) break;
+        if (pages[idx + next] != pages[idx] + next) break;
+        run += 4096;
+    }
     if (run > *Length) run = *Length;
     if (run > total) run = total;
     *Length = run;
@@ -89,6 +128,8 @@ PPHYSICAL_ADDRESS IoMapTransfer(PPHYSICAL_ADDRESS Result, PADAPTER_OBJECT Adapte
     return Result;
 }
 
+/* We hand drivers the buffer's own physical addresses rather than map registers, so there is
+ * nothing to copy back when a transfer finishes. */
 BOOLEAN IoFlushAdapterBuffers(PADAPTER_OBJECT Adapter, PMDL Mdl, PVOID MapRegisterBase, PVOID CurrentVa, ULONG Length, BOOLEAN WriteToDevice)
 {
     UNREFERENCED_PARAMETER(Adapter); UNREFERENCED_PARAMETER(Mdl); UNREFERENCED_PARAMETER(MapRegisterBase);
@@ -117,7 +158,11 @@ ULONG HalGetDmaAlignmentRequirement(VOID)
     return 1;
 }
 
-/* Flush pages an I/O read brought in, so the instruction cache never sees stale code. */
+/* Flush pages an I/O read brought in, so the instruction cache never sees stale code.
+ *
+ * Sweeping the data cache around every DMA was tried too, on the theory that a dirty line could
+ * reach the disk stale (STORY.md wall 50).  It changed nothing: Bandit is coherent with the
+ * 604, as the file header says, and the corruption had another cause entirely. */
 VOID HalFlushIoBuffers(PMDL Mdl, BOOLEAN ReadOperation, BOOLEAN DmaOperation)
 {
     UNREFERENCED_PARAMETER(DmaOperation);

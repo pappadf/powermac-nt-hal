@@ -7,6 +7,7 @@ IoBuildSynchronousFsdRequest
 IoCallDriver
 IoCreateSymbolicLink
 IoGetConfigurationInformation
+IoGetDeviceObjectPointer
 KdDebuggerEnabled DATA
 KeBugCheck
 KeBugCheckEx
@@ -24,6 +25,7 @@ MmAllocateContiguousMemory
 MmFreeContiguousMemory
 MmGetPhysicalAddress
 MmMapIoSpace
+ObDereferenceObject
 RtlInitUnicodeString
 RtlTimeFieldsToTime
 RtlTimeToTimeFields

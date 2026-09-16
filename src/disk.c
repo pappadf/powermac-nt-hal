@@ -43,17 +43,11 @@ static ULONG HalpGetUlong(const volatile UCHAR *p)
     return (ULONG)p[0] | ((ULONG)p[1] << 8) | ((ULONG)p[2] << 16) | ((ULONG)p[3] << 24);
 }
 
-/* Sector numbers come back out of a byte offset, and a freestanding build has no __udivdi3;
- * shift-and-subtract long division keeps the HAL self-contained. */
+/* Sector numbers come out of a byte offset; the division is 64-bit and a freestanding build
+ * has no __udivdi3, so it goes through the HAL's own long division (misc.c). */
 static ULONG HalpDivBySector(LARGE_INTEGER Offset, ULONG SectorSize)
 {
-    ULONGLONG n = (ULONGLONG)Offset, rem = 0;
-    ULONG q = 0;
-    for (int i = 63; i >= 0; i--) {
-        rem = (rem << 1) | ((n >> i) & 1);
-        if (rem >= SectorSize) { rem -= SectorSize; if (i < 32) q |= 1u << i; }
-    }
-    return q;
+    return (ULONG)HalpDivU64((ULONGLONG)Offset, SectorSize);
 }
 
 static VOID HalpPutUlong(volatile UCHAR *p, ULONG v)
