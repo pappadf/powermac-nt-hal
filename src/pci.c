@@ -155,12 +155,31 @@ BOOLEAN HalTranslateBusAddress(INTERFACE_TYPE InterfaceType, ULONG BusNumber, PH
          * machine check, all-ones, and a driver spinning on a VGA status bit that never clears
          * (the first boot of the installed system, 16 September).  On a linear-framebuffer card
          * the window is a 128 KB view of VRAM, so alias both onto the 54M30's BAR0. */
-        if ((bus_lo >= 0xA0000u && bus_lo < 0xC0000u) ||
-            (bus_lo >= VGA_APERTURE_MOVED && bus_lo < VGA_APERTURE_MOVED + 0x20000u)) {
+        /* The display driver asks for the legacy VGA window twice, and the two answers differ.
+         *
+         * Its access-range table names the window (moved to VGA_APERTURE_MOVED by ledger row 6),
+         * and VideoPortVerifyAccessRanges has IoReportResourceUsage translate both ends of every
+         * range; a refusal there is STATUS_INVALID_PARAMETER and the driver gives up before it
+         * maps its framebuffer (STOP c0000143, 16 September 16:57).  That one is answered with the
+         * 54M30's VRAM, so that a dereference lands somewhere real instead of master-aborting
+         * (the first boot's eight machine checks and a driver spinning on all-ones).
+         *
+         * Then it asks for 0xA0000 itself, by name, for the window it would actually use -- and
+         * that one is refused, as the 09-14 desktop runs refused it: with a NULL window the
+         * driver and cirrus.dll draw on the CPU, which this emulator's 54M30 can show.  Aliased
+         * onto VRAM, the pair took an accelerated path the model does not have, and GUI Setup's
+         * pages came up as a black void with one button (16:26, 17:27); onto private RAM the
+         * driver initialised and failed anyway (17:14).  0xA0000 is also, truthfully, an address
+         * this board's CPU cannot reach on the PCI bus. */
+        if (bus_lo >= VGA_APERTURE_MOVED && bus_lo < VGA_APERTURE_MOVED + 0x20000u) {
             ULONG vram = HalpVgaVramPhys();
             if (!vram) return FALSE;
             *TranslatedAddress = vram + (bus_lo & 0x1FFFFu);
             return TRUE;
+        }
+        if (bus_lo >= 0xA0000u && bus_lo < 0xC0000u) {
+            HALP_TRACE("HAL: legacy VGA window %x refused, as always\n", bus_lo);
+            return FALSE;
         }
         /* Other PCI memory is identity-mapped, but only above the Bandit windows; anything else
          * below 0x80000000 is ordinary RAM here, and handing it back would let a driver write
@@ -182,12 +201,6 @@ BOOLEAN HalTranslateBusAddress(INTERFACE_TYPE InterfaceType, ULONG BusNumber, PH
                 return TRUE;
             }
             return FALSE;
-        }
-        if (bus_lo >= 0xA0000u && bus_lo < 0xC0000u) {           /* the legacy VGA window: VRAM, as above */
-            ULONG vram = HalpVgaVramPhys();
-            if (!vram) return FALSE;
-            *TranslatedAddress = vram + (bus_lo & 0x1FFFFu);
-            return TRUE;
         }
         if (bus_lo < 0x80000000u) return FALSE;
         *TranslatedAddress = bus_lo;
