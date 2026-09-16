@@ -70,12 +70,13 @@ python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 # 2. the floppy: that veneer, SETUPLDR, the HAL, the keyboard driver, a txtsetup.oem
 python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img \
         --veneer tmp/veneer-fd.exe --setupldr <PPC/SETUPLDR> \
-        --hal build/hal.dll --kbd <i8042prt replacement> \
+        --hal build/hal.dll \
         --display-driver <cirrus.sys> --display-dll <cirrus.dll> \
-        --vga-aperture 0x90000000 --adb-driver <ADB keyboard driver>
+        --vga-aperture 0x90000000
 #   prints the veneer's start block and length -- pass them to step 3
-#   --adb-driver offers the keyboard driver under [SCSI]: at the mass-storage screen press S,
-#   then Other, then pick it.  That is the only OEM class SETUPLDR loads arbitrary drivers for
+#   build/adbport.sys goes on the disk by itself (--adb-driver PATH to substitute another), offered
+#   under [SCSI]: at the mass-storage screen press S, then Other, then pick it.  That is the only
+#   OEM class SETUPLDR loads arbitrary drivers for
 #   the three display options are what clear wall 25 (4.3); without them Setup dies
 #   initialising video.  cirrus.sys and cirrus.dll come off the user's own media
 
@@ -110,9 +111,8 @@ None are in git; all are reproducible.
 R=<ANS ROM>;  ISO=<stock NT CD>
 python3 tools/mkveneer.py <PPC/VENEER.EXE> --out tmp/veneer-fd.exe --for cd
 python3 tools/mkbootfloppy.py --out tmp/boot-floppy.img --veneer tmp/veneer-fd.exe \
-        --setupldr <PPC/SETUPLDR> --hal build/hal.dll --kbd <i8042prt replacement> \
-        --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000 \
-        --adb-driver <ADB keyboard driver>
+        --setupldr <PPC/SETUPLDR> --hal build/hal.dll \
+        --display-driver <cirrus.sys> --display-dll <cirrus.dll> --vga-aperture 0x90000000
 python3 tools/mkcoldboot.py --rom $R --cd $ISO --staging tmp/nt-onedisk.img \
         --floppy tmp/boot-floppy.img --veneer-dev /bandit/gc/swim3 \
         --veneer-block 0x21 --veneer-blocks 0x13c \
@@ -531,15 +531,61 @@ C5: our own driver, where we choose the mechanism.
 Either way the install stops one copy short, and the disk stays empty. Nothing above it is in
 doubt: everything Setup asked for before this point, it got from the floppy.
 
+### 4.7 C5 as drafted: `adbport.sys`, and the OEM disk that rides in RAM — **untested**
+
+Written on 16 September and never loaded. What it is, so the first test is a test and not a
+guess:
+
+**One driver, three devices**, delivered under `[SCSI]` exactly as `usbadb.sys` was:
+`\Device\KeyboardPort0` and `\Device\PointerPort0` turn the ADB packets the HAL already
+delivers (`HalPxiAdbSetCallback`, at DISPATCH_LEVEL) into what `kbdclass` and `mouclass` expect,
+and `\Device\Floppy0` serves the OEM disk image from RAM. `drivers/adbport/README.md` has the
+detail; `drivers/adbport/adbport.h` pins every NT layout it depends on with a static assert.
+
+**The hand-off is a contract, `include/oemdisk.h`, with three parties:**
+
+1. `\BOOT.OF` reads the *whole* floppy — 2880 blocks, after the veneer's 316 — into RAM at
+   `0x03A01000`, sums what `read-blocks` returned, and lays an `OEMDISK_HEADER` at `0x03A00000`:
+   magic `'ANSO'`, version, image address and size, block size, blocks read.
+2. The HAL (`src/oemdisk.c`), in phase 0, maps that page with `KePhase0MapIo`, checks the header
+   and then that the image begins with a FAT boot sector, and **retypes the pages
+   `LoaderFirmwarePermanent`** in the loader's descriptor list — the same surgery
+   `HalpReserveVgaAperture` does — so NT never hands them out. A header that fails any check is
+   one trace line, and Setup simply has no drive A:. `HalAnsOemDiskQuery` is the export the
+   driver asks.
+3. The driver maps the image with `MmMapIoSpace` and answers reads, writes and the floppy IOCTLs.
+
+**Why a fixed physical address, and why that one.** The veneer is Microsoft's and carries nothing
+we add to the device tree, so the image has to be found by convention. `0x03A00000` (58 MB) is
+below the veneer's own staging at `0x3D00000`/`0x3E00000` and far above anything SETUPLDR has
+loaded on any run (under 8 MB). It assumes 64 MB of RAM, which `setup.of`'s `load-base` and
+`real-base` already assume. The HAL's validation is what makes a machine that breaks the
+assumption fail loudly.
+
+**Why not the real floppy.** An NT SWIM3 driver is the same NT device layer plus an entire
+hardware layer — the ISM register protocol, DBDMA, an interrupt, motor and step timing, MFM
+sector addressing — debugged against an emulator model no NT driver has ever driven. A ramdisk is
+a bounds check and a `memcpy`. maciNTosh made the same trade for the same reason. If a real
+drive A: is wanted later, it sits on top of this exact device code.
+
+**Toolchain.** `adbport.imports` names two DLLs, so `tools/mkstubs.py` and `tools/elf2pe.py`
+gained import groups: a marker symbol per group in the IAT, one import descriptor per DLL, the
+DLL names on `elf2pe`'s command line in group order. `make` builds `build/adbport.sys` beside
+`build/hal.dll`, and `mkbootfloppy.py` puts it on the disk by default.
+
+**What the first test has to show**, in order: the HAL's `OEM disk: … bytes at …` line in phase
+0; `adbport: up` after the SCSI prompt; `adbport: keyboard class connected`; a keystroke; then
+the copy screen that stopped us in §4.6 going through. §4.6's run is the test rig, unchanged.
+
 ## 5. What has to be built
 
 | # | component | state |
 |---|-----------|-------|
 | C1 | `tools/mkbootfloppy.py` — the 1.44 MB image | **done**. Verified by an independent FAT reader and byte-compared against its inputs |
-| C2 | `txtsetup.oem` | **done for `Computer`** (E16, E17). The `[Keyboard]` class is written but was never exercised: Setup never asked, and no `Apple Desktop Bus keyboard` line appears in any log |
+| C2 | `txtsetup.oem` | **done** for `Computer`, `Display` and `SCSI` (E16, E17, E19). The `[Keyboard]` class was removed: SETUPLDR has no prompt for it and the keyboard arrives under `[SCSI]` |
 | C3 | floppy-aware cold boot | **done** — `mkcoldboot.py --floppy`, `--veneer-dev`, `--veneer-block`; `--staging` is no longer required |
 | C4 | the drive's ARC identity and I/O | **done** — §4.1 (no patch) and §4.2 (ledger row 17) |
-| C5 | our own ADB port driver | not started. Replaces maciNTosh's `usbadb.sys`, the last non-shippable piece. `entii-for-workcubes` `fpsidrv`; the HAL half exists |
+| C5 | our own ADB port driver **and OEM-disk ramdisk**, `drivers/adbport` | **drafted, builds, never loaded** (§4.7). Replaces maciNTosh's `usbadb.sys`, the last non-shippable piece, and is what §4.6's copy step is waiting for |
 | C6 | the boot script on the floppy (was: `nvramrc`) | **most of the way there** (§4.5): `load fd:,\boot.of` + `load-base loadsize eval` is two lines instead of twenty-eight, and every word in it is verified. What is left is the `load-base` overlap. `nvramrc` on top would make it zero lines |
 | ~~C6-old~~ | ~~`nvramrc` installer~~ | not started. The §2.1 block as one line, so the machine boots the floppy unattended. E10 says `nvramrc` exists; the one-line form is untested |
 | **C7** | ~~an OEM display class~~ **done** | `--display-driver`, `--display-dll` and `--vga-aperture 0x90000000`. Wall 25 cleared with no poke anywhere (§4.3). Still ledger row 6 — it edits a Microsoft driver's data — but it is now the edit the ledger always asked for, and one an OEM disk can deliver |
@@ -560,7 +606,8 @@ doubt: everything Setup asked for before this point, it got from the floppy.
    the patched-CD path has already driven end to end, so nothing new is expected until the
    installed system's two registry workarounds.
 6. **C6**, `nvramrc`, which removes the typing.
-7. **C5**, our own ADB driver, which is what makes the floppy image redistributable.
+7. **C5 — drafted (§4.7); test it.** It is now both the thing that makes the floppy
+   redistributable and the thing §4.6's install is waiting on, so it moves to the front.
 8. Only then revisit the single-file/browser idea, which becomes a ~1.4 MB download built from
    the user's own CD.
 

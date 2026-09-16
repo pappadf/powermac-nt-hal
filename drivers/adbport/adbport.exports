@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 powermac-nt-hal contributors
+# A driver exports nothing; this exists so mkstubs.py makes the { entry, toc } descriptor and the
+# 64-byte-frame thunk for the one routine the kernel calls by descriptor from outside: DriverEntry.
+DriverEntry

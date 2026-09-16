@@ -85,7 +85,8 @@ def main():
     ap.add_argument('elf'); ap.add_argument('out')
     ap.add_argument('--exports', required=True); ap.add_argument('--dllname', default='HAL.dll')
     ap.add_argument('--entry', default='desc_HalInitSystem')
-    ap.add_argument('--import-dll', default='ntoskrnl.exe')
+    ap.add_argument('--import-dll', action='append', default=None,
+                    help='one per import group in the .imports file, in order (default: ntoskrnl.exe)')
     ap.add_argument('--section-align', type=lambda x: int(x, 0), default=0x1000)
     ap.add_argument('--file-align', type=lambda x: int(x, 0), default=0x200)
     a = ap.parse_args()
@@ -141,10 +142,18 @@ def main():
     exports.sort(key=lambda e: e[0].encode())  # the loader binary-searches by name
     # --- imports: __imp_* slots in .idata --------------------------------------------
     imps = sorted([s for s in elf.symbols if s['name'].startswith('__imp_') and s['shndx'] not in (0, 0xfff1)], key=lambda s: s['value'])
-    if imps:
-        lo, hi = imps[0]['value'], imps[-1]['value'] + 4
-        for i, s in enumerate(imps):
-            assert s['value'] == lo + 4 * i, 'import slots must be contiguous'
+    marks = sorted([s['value'] for s in elf.symbols if s['name'].startswith('__impgrp_') and s['shndx'] not in (0, 0xfff1)])
+    if imps and not marks: marks = [imps[0]['value']]          # an imports.S from before groups existed
+    groups = []                                                  # [(dll, [slot symbols]), ...]
+    dlls = a.import_dll or ['ntoskrnl.exe']
+    if len(dlls) != len(marks):
+        sys.exit(f'elf2pe: {len(marks)} import group(s) in the ELF but {len(dlls)} --import-dll name(s)')
+    for gi, start in enumerate(marks):
+        end = marks[gi + 1] if gi + 1 < len(marks) else None
+        g = [s for s in imps if s['value'] >= start and (end is None or s['value'] < end)]
+        for i, s in enumerate(g):
+            assert s['value'] == start + 4 * i, 'import slots within a group must be contiguous'
+        groups.append((dlls[gi], g))
     # --- base relocations --------------------------------------------------------------
     fixups = []  # (rva, type, extra)
     for tgt, off, typ, sym, addend in elf.relocs():
@@ -177,34 +186,40 @@ def main():
     edata += dll_bytes + names_blob
     pesecs.append(dict(name='.edata', rva=edata_rva, vsize=len(edata), data=edata, chars=0x40000040))
     end_rva = edata_rva + align(len(edata), SA)
-    # import directory (the IAT itself lives in the ELF's .idata)
+    # import directory (the IATs themselves live in the ELF's .idata, one zero-terminated run
+    # per group).  NT's boot loader binds imports by walking each IAT and reading every slot as a
+    # hint/name RVA -- it never consults OriginalFirstThunk -- so each IAT must start out as a
+    # copy of its ILT.
     idir_rva = end_rva
     if imps:
-        # layout: descriptor(20) + null(20) | ILT (n+1)*4 | dllname | hint/name entries
-        ilt_rva = idir_rva + 40
-        cur = 40 + (len(imps) + 1) * 4
-        dll2 = a.import_dll.encode() + b'\0'
-        if len(dll2) & 1: dll2 += b'\0'          # hint/name entries must be 2-byte aligned (the loader reads the hint as a USHORT)
-        dllname_rva = idir_rva + cur; cur += len(dll2)
-        hints = b''; hint_rvas = []
-        for s in imps:
-            hint_rvas.append(idir_rva + cur)
-            hb = struct.pack('<H', 0) + s['name'][6:].encode() + b'\0'
-            if len(hb) & 1: hb += b'\0'
-            hints += hb; cur += len(hb)
-        iat_rva = rva(imps[0]['value'])
-        idir = struct.pack('<IIIII', ilt_rva, 0, 0, dllname_rva, iat_rva) + b'\0' * 20
-        idir += b''.join(struct.pack('<I', r) for r in hint_rvas) + b'\0\0\0\0'
-        idir += dll2 + hints
+        ng = len(groups)
+        cur = 20 * (ng + 1)                                   # descriptors, then the null one
+        ilt_rvas = []
+        for _, g in groups:
+            ilt_rvas.append(idir_rva + cur); cur += (len(g) + 1) * 4
+        blobs = b''; name_rvas = {}; hint_rvas = {}
+        for dll, g in groups:
+            db = dll.encode() + b'\0'
+            if len(db) & 1: db += b'\0'
+            name_rvas[dll] = idir_rva + cur; blobs += db; cur += len(db)
+            for s_ in g:
+                hb = struct.pack('<H', 0) + s_['name'][6:].encode() + b'\0'
+                if len(hb) & 1: hb += b'\0'
+                hint_rvas[s_['name']] = idir_rva + cur; blobs += hb; cur += len(hb)
+        idir = b''
+        for (dll, g), ilt in zip(groups, ilt_rvas):
+            idir += struct.pack('<IIIII', ilt, 0, 0, name_rvas[dll], rva(g[0]['value']) if g else 0)
+        idir += b'\0' * 20
+        for _, g in groups:
+            idir += b''.join(struct.pack('<I', hint_rvas[s_['name']]) for s_ in g) + b'\0\0\0\0'
+        idir += blobs
         pesecs.append(dict(name='.idir', rva=idir_rva, vsize=len(idir), data=idir, chars=0x40000040))
         end_rva = idir_rva + align(len(idir), SA)
-        # NT's boot loader binds imports by walking the IAT and reading each slot as a hint/name RVA
-        # (it never consults OriginalFirstThunk), so the IAT must start out as a copy of the ILT.
         idata = [p for p in pesecs if p['name'] == '.idata'][0]
         buf = bytearray(idata['data'].ljust(idata['vsize'], b'\0'))
-        for s_, hr in zip(imps, hint_rvas):
-            o = s_['value'] - idata['addr']
-            struct.pack_into('<I', buf, o, hr)
+        for _, g in groups:
+            for s_ in g:
+                struct.pack_into('<I', buf, s_['value'] - idata['addr'], hint_rvas[s_['name']])
         idata['data'] = bytes(buf)
     # .reloc
     reloc = b''
@@ -248,7 +263,8 @@ def main():
     dirs[0], dirs[1] = edata_rva, len(edata)
     if imps:
         dirs[2], dirs[3] = idir_rva, 40
-        dirs[24], dirs[25] = iat_rva, 4 * len(imps)
+        # the IAT directory spans every group's slots and the zero terminator after each
+        dirs[24], dirs[25] = rva(imps[0]['value']), 4 * (len(imps) + len(groups))
     dirs[10], dirs[11] = reloc_rva, len(reloc)
     opt = struct.pack('<HBBIIIIIIIIIHHHHHHIIIIHHIIIIII', 0x10B, 3, 10, size_code, size_idata, size_udata,
                       rva(entry_sym['value']), text['rva'], datas[0]['rva'] if datas else 0, image_base, SA, FA,

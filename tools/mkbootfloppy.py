@@ -29,7 +29,7 @@ line and comes from the user's own media.  The tool writes an image; it ships no
 It prints the veneer's start block and length in blocks, which is what
 `mkcoldboot.py --veneer-dev /bandit/gc/swim3 --veneer-block N --veneer-blocks M` needs.
 """
-import argparse, os, struct, sys
+import argparse, os, re, struct, sys
 
 SECTOR = 512
 GEOM = dict(bps=512, spc=1, reserved=1, nfats=2, root_entries=224, total=2880,
@@ -273,12 +273,12 @@ def move_vga_aperture(driver, to):
 # cannot share one.
 OEM_SCSI = """
 [SCSI]
-usbadb = "Apple Desktop Bus keyboard and mouse (via Cuda)"
+adbport = "Apple Desktop Bus keyboard and mouse, and the OEM disk (powermac-nt-hal)"
 
-[Files.SCSI.usbadb]
-driver = d1, usbadb.sys, usbadb
+[Files.SCSI.adbport]
+driver = d1, adbport.sys, adbport
 
-[Config.usbadb]
+[Config.adbport]
 """
 
 
@@ -309,8 +309,34 @@ driver = d1, usbadb.sys, usbadb
 CHUNK = 0x20                     # blocks per read-blocks call, as the firmware's own transcript does
 
 
-def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev,
+def oemdisk_constants():
+    """OEMDISK_* from include/oemdisk.h -- the contract the HAL and drivers/adbport are compiled
+    against.  Read at run time so the three cannot drift apart silently; the fallbacks are the
+    values as of the first draft, used only when this tool runs away from its checkout."""
+    defaults = dict(OEMDISK_PHYS=0x03A00000, OEMDISK_HEADER_SIZE=0x1000, OEMDISK_MAGIC=0x4F534E41,
+                    OEMDISK_VERSION=1, OEMDISK_BLOCK=512)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'include', 'oemdisk.h')
+    try:
+        text = open(path).read()
+    except OSError:
+        return defaults
+    out = dict(defaults)
+    for k in defaults:
+        m = re.search(r'#define\s+%s\s+(0x[0-9A-Fa-f]+|\d+)u?' % k, text)
+        if m: out[k] = int(m.group(1), 0)
+    return out
+
+
+
+def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_blocks,
                 stage=0x3D00000, load=0x3E00000):
+    """disk_blocks: the whole floppy, 2880 for 1.44 MB.  It is read into RAM behind the veneer so
+    that drivers/adbport can serve it to Setup as \\Device\\Floppy0 once NT is running --
+    the copy of OEM files onto the hard disk happens under NT, and NT has no SWIM3 driver.
+    The contract is include/oemdisk.h; the HAL checks the header and fences the pages."""
+    C = oemdisk_constants()
+    hdr, img = C['OEMDISK_PHYS'], C['OEMDISK_PHYS'] + C['OEMDISK_HEADER_SIZE']
+    img_bytes = disk_blocks * C['OEMDISK_BLOCK']
     L = ['\\ powermac-nt-hal -- start Windows NT Setup on an Apple Network Server 500/700',
          '\\',
          '\\ Run this at the 0 > prompt with:',
@@ -334,7 +360,25 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev,
         addr += n * 512
         blk += n
         left -= n
-    L += ['   nt-fd close-dev',
+    # The OEM disk: map header page + image, read every block, sum what read-blocks returned.
+    L += ['   \\ the whole disk again, for Windows NT: see include/oemdisk.h',
+          f'   {hdr:X} {C["OEMDISK_HEADER_SIZE"] + img_bytes:X} " map-space" nt-pe $call-method',
+          '   0']
+    addr, blk, left = img, 0, disk_blocks
+    while left > 0:
+        n = min(CHUNK, left)
+        L.append(f'   {addr:X} {blk:X} {n:X} " read-blocks" nt-fd $call-method +')
+        addr += n * 512
+        blk += n
+        left -= n
+    L += [f'   {hdr + 0x14:X} !                     \\ BlocksRead: the sum',
+          f'   {C["OEMDISK_MAGIC"]:X} {hdr:X} !         \\ Magic',
+          f'   {C["OEMDISK_VERSION"]:X} {hdr + 4:X} !       \\ Version',
+          f'   {img:X} {hdr + 8:X} !               \\ ImagePhys',
+          f'   {img_bytes:X} {hdr + 0xC:X} !          \\ ImageBytes',
+          f'   {C["OEMDISK_BLOCK"]:X} {hdr + 0x10:X} !      \\ BlockBytes',
+          f'   0 {hdr + 0x18:X} !   0 {hdr + 0x1C:X} !',
+          '   nt-fd close-dev',
           f'   {load:X} {veneer_bytes:X} " map-space" nt-pe $call-method',
           f'   {stage:X} {load:X} {veneer_bytes:X} move',
           f'   {veneer_bytes:X} to loadsize',
@@ -374,12 +418,12 @@ def setup_script(real_base=0x3F00000, load_base=0x3E00000):
 
 
 def txtsetup_oem(display, adb=False):
-    defaults = ['\n[Defaults]', 'computer = shiner_up', 'keyboard = adb_kbd']
+    defaults = ['\n[Defaults]', 'computer = shiner_up']
     if display:
         defaults.append('display = ans_cirrus')
     if adb:
-        defaults.append('scsi = usbadb')
-    body = OEM_HEADER + '\n'.join(defaults) + '\n' + OEM_COMPUTER + OEM_KEYBOARD
+        defaults.append('scsi = adbport')
+    body = OEM_HEADER + '\n'.join(defaults) + '\n' + OEM_COMPUTER
     if display:
         body += OEM_DISPLAY
     if adb:
@@ -394,9 +438,11 @@ def main():
     ap.add_argument('--setupldr', required=True, help="PPC/SETUPLDR from the user's CD")
     ap.add_argument('--hal', required=True, help='build/hal.dll — installed as HALSHINR.DLL')
     ap.add_argument('--adb-driver', metavar='PATH',
-                    help='the ADB keyboard/mouse driver, installed as USBADB.SYS and offered under '
-                         'the SCSI prompt (S, Other) -- the only OEM class SETUPLDR loads more '
-                         'than one driver for, and how maciNTosh delivers the same driver')
+                    help='the ADB keyboard/mouse/OEM-disk driver, installed as ADBPORT.SYS and '
+                         'offered under the SCSI prompt (S, Other) -- the one OEM class SETUPLDR '
+                         'loads any number of drivers for. Default: build/adbport.sys, this '
+                         "project's own; pass another binary to try it in the same slot")
+    ap.add_argument('--no-adb-driver', action='store_true', help='leave the [SCSI] class off the disk')
     ap.add_argument('--boot-script', metavar='PATH',
                     help='use this file as \\BOOT.OF instead of the generated one')
     ap.add_argument('--fd-dev', default='/bandit/gc/swim3',
@@ -417,7 +463,8 @@ def main():
                                   'SETUPLDR reads its INF from the device it booted from, and '
                                   'without one it stops at "INF file txtsetup.sif is corrupt or '
                                   'missing". Not needed for the OEM-disk arrangement of 2.1')
-    ap.add_argument('--kbd', help='the driver installed as I8042PRT.SYS (optional while C5 is open)')
+    ap.add_argument('--kbd', help='(no longer needed) a driver to place as I8042PRT.SYS; the '
+                                  'keyboard now arrives as adbport.sys under [SCSI]')
     ap.add_argument('--display-driver', help='the display miniport, installed as CIRRUS.SYS')
     ap.add_argument('--display-dll', help='the display DLL, installed as CIRRUS.DLL')
     ap.add_argument('--vga-aperture', type=lambda x: int(x, 0), metavar='ADDR', default=None,
@@ -435,6 +482,12 @@ def main():
     if bool(a.display_driver) != bool(a.display_dll) or (a.vga_aperture is not None
                                                          and not a.display_driver):
         sys.exit('the display class needs both --display-driver and --display-dll, or neither')
+
+    adb_driver = None
+    if not a.no_adb_driver:
+        adb_driver = a.adb_driver or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'adbport.sys')
+        if not os.path.exists(adb_driver):
+            sys.exit(f'{adb_driver}: not found -- `make` builds it, or --adb-driver PATH, or --no-adb-driver')
 
     fs = Fat12(**GEOM)
     veneer = read(a.veneer)
@@ -455,7 +508,7 @@ def main():
                               ('I8042PRT.SYS', a.kbd, root),
                               ('CIRRUS.SYS', a.display_driver, root),
                               ('CIRRUS.DLL', a.display_dll, root),
-                              ('USBADB.SYS', a.adb_driver, root)):
+                              ('ADBPORT.SYS', adb_driver, root)):
         if path is None:
             print(f'  ({name} omitted -- no path given)')
             continue
@@ -474,7 +527,8 @@ def main():
     # after Setup needs a keyboard.  The root copy stays for the OEM-disk arrangement.
     if not a.no_scripts:
         boot = (read(a.boot_script) if a.boot_script
-                else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev).encode('ascii'))
+                else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev,
+                                 GEOM['total']).encode('ascii'))
         c, _ = fs.alloc(boot)
         root.append(fs.dirent('BOOT.OF', c, len(boot)))
         setup = setup_script().encode('ascii')
@@ -497,7 +551,7 @@ def main():
         ppc.append(fs.dirent('I8042PRT.SYS', c, len(data)))
         print('  \\PPC\\I8042PRT.SYS   a second copy, for booting from this disk')
 
-    oem = read(a.oem) if a.oem else txtsetup_oem(display, bool(a.adb_driver)).encode('ascii')
+    oem = read(a.oem) if a.oem else txtsetup_oem(display, adb_driver is not None).encode('ascii')
     oc, _ = fs.alloc(oem)
 
     root = [fs.subdir('PPC', ppc), fs.dirent('TXTSETUP.OEM', oc, len(oem))] + root

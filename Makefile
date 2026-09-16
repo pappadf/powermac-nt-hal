@@ -24,7 +24,7 @@ SRCS_S = $(wildcard src/*.S)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS_C)) $(patsubst src/%.S,$(BUILD)/%.o,$(SRCS_S)) \
        $(BUILD)/imports.o $(BUILD)/exports.o
 
-all: $(BUILD)/hal.dll
+all: $(BUILD)/hal.dll $(BUILD)/adbport.sys
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -46,6 +46,35 @@ $(BUILD)/hal.elf: $(OBJS) hal.ld
 
 $(BUILD)/hal.dll: $(BUILD)/hal.elf hal.exports $(TOOLS)/elf2pe.py
 	python3 $(TOOLS)/elf2pe.py $< $@ --exports hal.exports --dllname HAL.dll
+
+# ---- adbport.sys: the ADB keyboard/mouse port driver and OEM-disk ramdisk (drivers/adbport) ----
+# The same toolchain and the same thunks as the HAL; a second .imports file with two DLL groups.
+ADB      = drivers/adbport
+ADB_SRCS = $(wildcard $(ADB)/*.c)
+ADB_OBJS = $(patsubst $(ADB)/%.c,$(BUILD)/adbport/%.o,$(ADB_SRCS)) \
+           $(BUILD)/adbport/thunk.o $(BUILD)/adbport/imports.o $(BUILD)/adbport/exports.o
+
+$(BUILD)/adbport:
+	mkdir -p $(BUILD)/adbport
+
+$(BUILD)/adbport/imports.S $(BUILD)/adbport/exports.S: $(ADB)/adbport.imports $(ADB)/adbport.exports $(TOOLS)/mkstubs.py | $(BUILD)/adbport
+	python3 $(TOOLS)/mkstubs.py $(ADB)/adbport.imports $(ADB)/adbport.exports $(BUILD)/adbport/imports.S $(BUILD)/adbport/exports.S
+
+$(BUILD)/adbport/%.o: $(ADB)/%.c $(ADB)/adbport.h include/*.h | $(BUILD)/adbport
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/adbport/%.o: $(ADB)/%.S | $(BUILD)/adbport
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/adbport/%.o: $(BUILD)/adbport/%.S | $(BUILD)/adbport
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/adbport.elf: $(ADB_OBJS) $(ADB)/adbport.ld
+	$(LLD) -T $(ADB)/adbport.ld --emit-relocs -nostdlib -static -o $@ $(ADB_OBJS)
+
+$(BUILD)/adbport.sys: $(BUILD)/adbport.elf $(ADB)/adbport.exports $(TOOLS)/elf2pe.py
+	python3 $(TOOLS)/elf2pe.py $< $@ --exports $(ADB)/adbport.exports --dllname adbport.sys \
+	        --entry desc_DriverEntry --import-dll ntoskrnl.exe --import-dll HAL.dll
 
 disasm: $(BUILD)/hal.elf
 	$(OBJDUMP) -d -r $< > $(BUILD)/hal.lst

@@ -20,6 +20,8 @@ VOID HalpPrint(const char *fmt, ...);
 VOID HalpSeedEnvironment(PVOID ArcDiskInformation);
 VOID HalpPutChar(UCHAR c);
 BOOLEAN HalpInitializeDisplay(PLOADER_PARAMETER_BLOCK LoaderBlock);
+VOID HalpOemDiskInitialize(PLOADER_PARAMETER_BLOCK LoaderBlock);   /* src/oemdisk.c, phase 0 */
+BOOLEAN HalAnsOemDiskQuery(PULONG PhysicalBase, PULONG Bytes);      /* exported for drivers/adbport */
 VOID HalpInitializeInterrupts(VOID);
 VOID HalpSetGcMask(ULONG mask);
 ULONG HalpReadTimebaseLow(VOID);

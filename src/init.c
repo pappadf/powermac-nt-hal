@@ -187,6 +187,7 @@ BOOLEAN HalInitSystem(ULONG Phase, PLOADER_PARAMETER_BLOCK LoaderBlock)
             }
             HalpPrint("HAL: %d memory descriptors, %d pages; PCR irql %d, kseg0 top %x\n", n, pages, PCR->CurrentIrql, PCR->Kseg0Top);
             HalpReserveVgaAperture(LoaderBlock);
+            HalpOemDiskInitialize(LoaderBlock);
         }
 
         HalpCurrentTimeIncrement = MAXIMUM_INCREMENT;
