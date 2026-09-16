@@ -67,6 +67,7 @@ BOOLEAN HalPxiCommandAdb(UCHAR Command, PUCHAR Data, UCHAR Length, BOOLEAN Poll)
 /* Cirrus 54M30 framebuffer console (source/vga.c) */
 extern BOOLEAN HalpFbActive;
 extern ULONG HalpFbCols, HalpFbRows, HalpFbCol, HalpFbRow;
+ULONG HalpVgaVramPhys(VOID);
 BOOLEAN HalpFbInit(PLOADER_PARAMETER_BLOCK LoaderBlock);
 VOID HalpFbPutChar(UCHAR ch);
 ULONG HalGetBusData(BUS_DATA_TYPE, ULONG, ULONG, PVOID, ULONG);

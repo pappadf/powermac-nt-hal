@@ -16,6 +16,11 @@
 #define MMIO_BASE_PHYS  0xF0000000u   /* one 256 MB block covers both Bandits, GC, Hammerhead, ROM */
 #define MMIO_BASE_SIZE  0x10000000u
 #define MMIO_BASE_VIRT  0xB0000000u   /* HAL I/O window, the range KePhase0MapIo also uses */
+/* Where ledger row 6 moves cirrus.sys's legacy VGA aperture (mkbootfloppy.py --vga-aperture): a
+ * PCI memory address nothing decodes, chosen only to be >= 0x80000000 so IoReportResourceUsage
+ * finds no conflict with RAM at 0xA0000.  HalTranslateBusAddress aliases both this window and
+ * the real 0xA0000..0xBFFFF onto the 54M30's linear VRAM. */
+#define VGA_APERTURE_MOVED  0x90000000u
 extern volatile UCHAR *HalpIoBase;    /* virtual address of MMIO_BASE_PHYS */
 #define IOV(phys) ((volatile void *)(HalpIoBase + ((phys) - MMIO_BASE_PHYS)))
 

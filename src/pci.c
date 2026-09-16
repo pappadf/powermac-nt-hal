@@ -147,10 +147,24 @@ BOOLEAN HalTranslateBusAddress(INTERFACE_TYPE InterfaceType, ULONG BusNumber, PH
             *AddressSpace = 0;
             return TRUE;
         }
-        /* PCI memory is identity-mapped, but only above the Bandit windows: a PCI VGA part
-         * decodes the legacy 0xA0000 aperture on the bus and a driver will ask for it, and on
-         * this machine that address is ordinary RAM.  Handing it back would let the driver
-         * write over the kernel. */
+        /* The legacy VGA window.  A PCI VGA part decodes 0xA0000..0xBFFFF on the bus, and the
+         * display driver maps it -- cirrus.sys for its access-range check (moved to
+         * VGA_APERTURE_MOVED by ledger row 6), the GUI-mode path to actually read and write it.
+         * The CPU cannot reach PCI addresses below 0x80000000 through either Bandit, and the
+         * moved window is a PCI address nothing decodes: dereferencing it is a master abort, a
+         * machine check, all-ones, and a driver spinning on a VGA status bit that never clears
+         * (the first boot of the installed system, 16 September).  On a linear-framebuffer card
+         * the window is a 128 KB view of VRAM, so alias both onto the 54M30's BAR0. */
+        if ((bus_lo >= 0xA0000u && bus_lo < 0xC0000u) ||
+            (bus_lo >= VGA_APERTURE_MOVED && bus_lo < VGA_APERTURE_MOVED + 0x20000u)) {
+            ULONG vram = HalpVgaVramPhys();
+            if (!vram) return FALSE;
+            *TranslatedAddress = vram + (bus_lo & 0x1FFFFu);
+            return TRUE;
+        }
+        /* Other PCI memory is identity-mapped, but only above the Bandit windows; anything else
+         * below 0x80000000 is ordinary RAM here, and handing it back would let a driver write
+         * over the kernel. */
         if (bus_lo < 0x80000000u) return FALSE;
         *TranslatedAddress = bus_lo;
         return TRUE;
@@ -169,7 +183,13 @@ BOOLEAN HalTranslateBusAddress(INTERFACE_TYPE InterfaceType, ULONG BusNumber, PH
             }
             return FALSE;
         }
-        if (bus_lo < 0x80000000u) return FALSE;   /* legacy VGA memory at 0xA0000 is not reachable */
+        if (bus_lo >= 0xA0000u && bus_lo < 0xC0000u) {           /* the legacy VGA window: VRAM, as above */
+            ULONG vram = HalpVgaVramPhys();
+            if (!vram) return FALSE;
+            *TranslatedAddress = vram + (bus_lo & 0x1FFFFu);
+            return TRUE;
+        }
+        if (bus_lo < 0x80000000u) return FALSE;
         *TranslatedAddress = bus_lo;
         return TRUE;
     default:
