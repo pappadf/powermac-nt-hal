@@ -7,8 +7,13 @@ This project's own Windows NT 4.0 PowerPC driver for the Apple Network Server's 
 Bus keyboard and mouse — and for the OEM disk image the boot floppy leaves in RAM, which it
 serves to Setup as `\Device\Floppy0`.
 
-**Status: a draft that compiles and has never been loaded.** Nothing in it has run. The first
-load is the test, and `docs/2026-09-15-the-boot-floppy.md` §4.7 says what that test is.
+**Status: loaded and working — text-mode Setup completes with it (16 September 2026).** SETUPLDR
+loads it under `[SCSI]`, `DriverEntry` brings up all three devices (`adbport: up; keyboard,
+pointer, OEM disk as \Device\Floppy0`), `kbdclass` connects (`keyboard class connected`), every
+Setup screen from Welcome to *"This portion of Setup has completed successfully"* was driven from
+the ADB keyboard, and Setup's OEM-file copy read the RAM floppy through `\Device\Floppy0`. The
+mouse path has not been exercised (text-mode Setup does not use one). See the boot-floppy note,
+§4.7 and E21–E23, for the three faults found on the way — none of them in this driver.
 
 ## Why it exists
 
