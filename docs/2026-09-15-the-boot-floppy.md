@@ -13,8 +13,10 @@ reaches a 7500/8500 later instead of being thrown away.*
 > A **stock, unmodified** NT 4.0 PowerPC CD — MD5 `ab37556d…`, not one byte written — now boots
 > on the emulator to text-mode Setup, is offered *Apple Network Server 500/700* as a computer
 > type, loads this project's HAL off the floppy, brings up the Cirrus through `cirrus.sys` and
-> `videoprt`, takes an ADB keyboard driver off the same disk, and reaches Setup's Welcome screen
-> — **with no poke, breakpoint or patched CD anywhere in the run**. Ledger row 8 is retired and wall 25, the oldest open item, is cleared (§4.3 says why
+> `videoprt`, takes an ADB keyboard driver off the same disk, and runs text-mode Setup on the ADB
+> keyboard through the licence, the hardware list, the partition list and the install directory —
+> **with no poke, breakpoint or patched CD anywhere in the run**, and with two typed lines per
+> phase instead of twenty-eight (§4.5). It stops one step short of copying files (§4.6). Ledger row 8 is retired and wall 25, the oldest open item, is cleared (§4.3 says why
 > it was never what the notes said it was), and wall 26 with it — the ADB keyboard driver arrives
 > on the OEM disk under `[SCSI]`, which is how maciNTosh has always done it (§4.4). Ledger rows 8
 > and 10 are both retired. Setup reaches its **Welcome screen**.
@@ -479,6 +481,55 @@ What each of those lines depends on, all measured at the `0 >` prompt:
 what applies it, so no medium can set it before the firmware has read the medium. Any claim of
 "insert and go" on a virgin machine is still false. `nvramrc` on top of this would take the
 per-boot case to zero lines, and is now a two-line thing to store rather than twenty-eight.
+
+### 4.6 The install: everything except the last copy
+
+With the two-line boot, a stock CD and the floppy, text-mode Setup now runs the whole way
+through on its own hardware:
+
+| | |
+|---|---|
+| Computer type | *Apple Network Server 500/700*, our HAL, off the floppy |
+| Mass storage | *Symbios Logic C810* **and** *Apple Desktop Bus keyboard and mouse (via Cuda)* — NT lists our ADB driver as a recognised device |
+| Video | *Cirrus Logic 54M30 (Apple Network Server 500/700)*, off the floppy, wall 25 cleared |
+| Licence, hardware list | driven entirely on the **ADB keyboard** |
+| Partition list | `D: FAT 478 MB` selected, *Leave the current file system intact* |
+| Directory | `\WINNT` |
+
+Then Setup asks for the OEM disk again — and this time it cannot read it:
+
+![Setup asking for the support disk it cannot read](../traces/2026-09-16-oem-copy-needs-a-floppy-nt-can-read.png)
+
+Enter does nothing, however many times. **This is R3, and it is confirmed.** The files Setup
+wants to copy are the ones already running — our HAL, the ADB driver, the display driver — but
+the copy happens under NT, through `\Device\Floppy0`, and **NT has no SWIM3 driver**. Everything
+up to this point was firmware I/O through the veneer, which is why it worked.
+
+maciNTosh's answer is now legible, and it explains a line in their README that reads like an
+aside: their HID driver *"currently only implements ADB keyboard/mouse **and ramdisk as floppy
+drive for installing drivers at text setup time**"*. The same binary we are using is both. Read
+against its imports and constants:
+
+* it creates `\Device\Floppy%d`, and its version resource calls it *"Mac I/O USB and ADB HID and
+  **Mass Storage** Driver"*;
+* it imports `MmMapIoSpace` and `MmMapLockedPages` and **no** HAL entry point beyond the three
+  `HalPxi*` ADB ones, so the ramdisk's whereabouts do not come from the HAL;
+* it compares a longword against `0x4449534B` — **`"DISK"`** — and reads fixed kernel-virtual
+  addresses `0x80004000` and `0x8000403C`, which is **physical `0x4000`**: maciNTosh's
+  `HW_DESCRIPTION`, whose last two fields are `DriversImgBase` and `DriversImgSize`.
+
+So on their machines the ARC firmware loads `drivers.img` into memory, publishes its base at
+physical `0x4000`, and the driver serves it to Setup as drive A:. Our firmware is Microsoft's
+veneer, which publishes no such thing — the drive NT sees is that ramdisk, and ours is empty.
+
+**What that makes the next step.** Not an NT SWIM3 driver, necessarily: populating the ramdisk the
+driver already implements would do, and `boot.of` is in a position to load a `drivers.img` and lay
+down a `HW_DESCRIPTION` before `go`. Physical `0x4000` is the page `boot.of` already maps (§4.5),
+which is either convenient or a collision — it has not been looked at. The honest alternative is
+C5: our own driver, where we choose the mechanism.
+
+Either way the install stops one copy short, and the disk stays empty. Nothing above it is in
+doubt: everything Setup asked for before this point, it got from the floppy.
 
 ## 5. What has to be built
 
