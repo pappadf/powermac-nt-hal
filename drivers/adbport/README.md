@@ -50,7 +50,7 @@ Everything, in this order of likelihood of being wrong:
    how a working driver on this platform has it; a wrong guess is an unresolved import at load.
 3. Whether `kbdclass` is happy with the attributes we report, and whether Setup's key handling
    needs the E0 flags exactly as set.
-4. The OEM disk's physical address (`0x03A00000`) surviving SETUPLDR's own allocations — the HAL
+4. The OEM disk's physical address (`0x03B97000`) surviving SETUPLDR's own allocations — the HAL
    validates the header and the FAT boot sector, so a collision is a trace line, not garbage.
 
 Delivered under `[SCSI]` by `txtsetup.oem`; at the mass-storage screen, `S`, `Other`, Enter.

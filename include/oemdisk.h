@@ -16,19 +16,27 @@
  *     through an NT floppy device, and NT has no driver for the SWIM3 behind the real drive.
  *
  * Why a fixed physical address.  The veneer is Microsoft's and publishes nothing we add to the
- * Open Firmware device tree, so the image has to be found by convention.  0x03A00000 (58 MB)
- * sits below the veneer's own staging areas at 0x3D00000/0x3E00000 (setup.of's load-base and
- * the block read that precedes it) and far above everything SETUPLDR loads, which on every run
- * so far stayed under 8 MB.  It assumes at least 64 MB of RAM, which the load-base/real-base
- * pair in setup.of already assumes.  The HAL validates the header and the FAT boot sector behind
- * it before trusting either, so a machine that does not fit the assumption reports a missing
- * disk rather than serving garbage.
+ * Open Firmware device tree, so the image has to be found by convention.  0x03B97000 is chosen
+ * so that header + image (0x169000 bytes) end exactly at 0x3D00000, where the veneer's staging
+ * area begins (boot.of reads the veneer there, then moves it to load-base 0x3E00000).  Claimed
+ * adjacent to a range the firmware has already claimed, this adds no entry to /memory's
+ * `available` list.  The first draft used 0x3A00000, in the middle of free memory: with that one
+ * extra entry in the list SETUPLDR's fourth open of the CD came back through the veneer as
+ * OFOpen('') -- an empty firmware path -- and Setup asked for the CD in "Drive A:".  The
+ * firmware itself was fine (the CD still opened and read from the 0 > prompt, and claims still
+ * succeeded); what inside the veneer turns the extra entry into an empty path is not known.
+ * Placed here, the same run reaches Setup's menus (the boot-floppy note, E22).  The veneer marks
+ * everything above 8 MB FirmwareTemporary, so SETUPLDR's own allocations never come near this.
+ * It assumes at least 64 MB of RAM, which the load-base/real-base pair in setup.of already
+ * assumes.  The HAL validates the header and the FAT boot sector behind it before trusting
+ * either, so a machine that does not fit the assumption reports a missing disk rather than
+ * serving garbage.
  *
  * Everything is little-endian: the machine runs little-endian from setup.of's reset onwards, so
  * Open Firmware's `!` stores exactly what NT reads. */
 #pragma once
 
-#define OEMDISK_PHYS          0x03A00000u   /* the header page; the image follows */
+#define OEMDISK_PHYS          0x03B97000u   /* the header page; the image follows */
 #define OEMDISK_HEADER_SIZE   0x1000u
 #define OEMDISK_IMAGE_PHYS    (OEMDISK_PHYS + OEMDISK_HEADER_SIZE)
 #define OEMDISK_MAGIC         0x4F534E41u   /* 'A','N','S','O' in memory order */

@@ -313,7 +313,7 @@ def oemdisk_constants():
     """OEMDISK_* from include/oemdisk.h -- the contract the HAL and drivers/adbport are compiled
     against.  Read at run time so the three cannot drift apart silently; the fallbacks are the
     values as of the first draft, used only when this tool runs away from its checkout."""
-    defaults = dict(OEMDISK_PHYS=0x03A00000, OEMDISK_HEADER_SIZE=0x1000, OEMDISK_MAGIC=0x4F534E41,
+    defaults = dict(OEMDISK_PHYS=0x03B97000, OEMDISK_HEADER_SIZE=0x1000, OEMDISK_MAGIC=0x4F534E41,
                     OEMDISK_VERSION=1, OEMDISK_BLOCK=512)
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'include', 'oemdisk.h')
     try:
