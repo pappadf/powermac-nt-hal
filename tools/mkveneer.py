@@ -126,7 +126,11 @@ def main():
         d[off:off + len(new)] = new
         print(f'  row {row}  VA {va:#07x}  {want!r} -> {new!r}   {why}')
 
-    for va, want, new, row, why in (SCSI_MODEL, FLOPPY_NAME):
+    # Row 17 is for SETUPLDR's benefit and CD-only as well: the installed system has no SWIM3
+    # driver, so the ARC floppy controller the rename produces would only give floppy.sys a
+    # controller to probe for.  (It was suspected of the GUI phase's STOP 0x35 and cleared: the
+    # STOP is the same without it.)
+    for va, want, new, row, why in ((SCSI_MODEL, FLOPPY_NAME) if a.target == 'cd' else (SCSI_MODEL,)):
         off = ven.va2off(va)
         if bytes(d[off:off + len(want)]) != want:
             sys.exit(f'{va:#x} holds {bytes(d[off:off+len(want)])!r}, expected {want!r} — refusing')
