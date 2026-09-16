@@ -21,6 +21,12 @@
  * finds no conflict with RAM at 0xA0000.  HalTranslateBusAddress aliases both this window and
  * the real 0xA0000..0xBFFFF onto the 54M30's linear VRAM. */
 #define VGA_APERTURE_MOVED  0x90000000u
+/* Where the 54M30 model puts the legacy VGA window inside BAR0's 16 MB aperture: the top
+ * 128 KB, above the 1 MB of fitted DRAM.  A real GD5430 decodes that window at 0xA0000 and
+ * nowhere else, but Bandit does not forward CPU accesses below 0x80000000, so the window has
+ * to live somewhere the CPU can reach.  This constant must match C54M30_WIN_BASE in the
+ * emulator's cirrus54m30.c. */
+#define VGA_APERTURE_MIRROR 0x00FE0000u
 extern volatile UCHAR *HalpIoBase;    /* virtual address of MMIO_BASE_PHYS */
 #define IOV(phys) ((volatile void *)(HalpIoBase + ((phys) - MMIO_BASE_PHYS)))
 

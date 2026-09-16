@@ -153,16 +153,19 @@ BOOLEAN HalTranslateBusAddress(INTERFACE_TYPE InterfaceType, ULONG BusNumber, PH
          * The CPU cannot reach PCI addresses below 0x80000000 through either Bandit, and the
          * moved window is a PCI address nothing decodes: dereferencing it is a master abort, a
          * machine check, all-ones, and a driver spinning on a VGA status bit that never clears
-         * (the first boot of the installed system, 16 September).  On a linear-framebuffer card
-         * the window is a 128 KB view of VRAM, so alias both onto the 54M30's BAR0. */
+         * (the first boot of the installed system, 16 September).  So it is answered inside the
+         * 54M30's BAR0, where the emulated part now decodes the window itself. */
         /* The display driver asks for the legacy VGA window twice, and the two answers differ.
          *
          * Its access-range table names the window (moved to VGA_APERTURE_MOVED by ledger row 6),
          * and VideoPortVerifyAccessRanges has IoReportResourceUsage translate both ends of every
          * range; a refusal there is STATUS_INVALID_PARAMETER and the driver gives up before it
-         * maps its framebuffer (STOP c0000143, 16 September 16:57).  That one is answered with the
-         * 54M30's VRAM, so that a dereference lands somewhere real instead of master-aborting
-         * (the first boot's eight machine checks and a driver spinning on all-ones).
+         * maps its framebuffer (STOP c0000143, 16 September 16:57).  That one is answered with
+         * the 54M30's LEGACY-WINDOW MIRROR: 128 KB inside BAR0 at VGA_APERTURE_MIRROR, where the
+         * emulated part decodes banked display memory and, at $B8000, the memory-mapped BitBLT
+         * registers.  Raw VRAM was the previous answer, and it is why the driver's register
+         * writes ended up in display memory as pixels: nothing decoded them as registers, so the
+         * BLT never started and its status bit never cleared.
          *
          * Then it asks for 0xA0000 itself, by name, for the window it would actually use -- and
          * that one is refused, as the 09-14 desktop runs refused it: with a NULL window the
@@ -174,7 +177,7 @@ BOOLEAN HalTranslateBusAddress(INTERFACE_TYPE InterfaceType, ULONG BusNumber, PH
         if (bus_lo >= VGA_APERTURE_MOVED && bus_lo < VGA_APERTURE_MOVED + 0x20000u) {
             ULONG vram = HalpVgaVramPhys();
             if (!vram) return FALSE;
-            *TranslatedAddress = vram + (bus_lo & 0x1FFFFu);
+            *TranslatedAddress = vram + VGA_APERTURE_MIRROR + (bus_lo & 0x1FFFFu);
             return TRUE;
         }
         if (bus_lo >= 0xA0000u && bus_lo < 0xC0000u) {
