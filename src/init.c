@@ -27,7 +27,9 @@ VOID HalInitializeProcessor(ULONG Number)
 /* The kernel's KePhase0MapIo hands out 8 MB BAT slots, three at most; the Network Server's
  * devices span 0xF2000000..0xF5FFFFFF, so the HAL programs DBAT3 itself: 256 MB of
  * cache-inhibited, guarded space at MMIO_BASE_VIRT onto MMIO_BASE_PHYS.  DBAT0 is the kernel's
- * KSEG0; DBAT1/2 stay for KePhase0MapIo.  A BAT never faults, so device access works at any IRQL. */
+ * KSEG0; DBAT1/2 are the slots KePhase0MapIo would use, which this HAL never calls -- its
+ * addresses fall inside DBAT3's window (oemdisk.c borrows DBAT2 for a moment in phase 0).  A BAT
+ * never faults, so device access works at any IRQL. */
 /* Print the ARC configuration tree the veneer built, with the resource lists of adapters and
  * controllers: this is the contract every driver's HwFindAdapter works from. */
 static VOID HalpDumpConfigTree(PCONFIGURATION_COMPONENT_DATA node, ULONG depth)

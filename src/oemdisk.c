@@ -18,9 +18,9 @@
  *      floppy full of garbage.
  *   2. Retype the pages LoaderFirmwarePermanent in the loader's memory descriptor list, exactly
  *      as HalpReserveVgaAperture carves the VGA aperture out of free memory (init.c).  The veneer
- *      may already have reported them permanent -- Open Firmware's map-space claims what it maps
- *      -- but nothing guarantees it, and one free descriptor covering the image would hand the
- *      OEM disk to the first driver that asks for pool.
+ *      reports everything above 8 MB as *FirmwareTemporary* (its -vrdebug 0x10 dump shows it),
+ *      and the kernel frees FirmwareTemporary memory once it is up -- so without this the OEM
+ *      disk would be the first pool the system hands out.
  *   3. Answer HalAnsOemDiskQuery for the driver, which maps the image itself.
  *
  * Saying "this physical range is not yours to allocate" is a HAL's job; that is the whole reason
@@ -29,6 +29,7 @@
 #include "oemdisk.h"
 
 #define LoaderFree               2
+#define LoaderFirmwareTemporary  5   /* what the veneer calls everything above 8 MB; freed after boot */
 #define LoaderFirmwarePermanent  6
 #define PAGE_SHIFT               12
 
@@ -54,12 +55,12 @@ static LONG HalpOemDiskReserve(PLOADER_PARAMETER_BLOCK LoaderBlock, ULONG lo, UL
         ULONG mlo = m->BasePage, mhi = m->BasePage + m->PageCount;
         if (mlo > lo || mhi < hi) continue;
         LONG was = (LONG)m->MemoryType;
-        if (was != LoaderFree) return was;           /* already not for the taking; leave it */
+        if (was != LoaderFree && was != LoaderFirmwareTemporary) return was;   /* leave anything else */
         HalpOemDiskHole.MemoryType = LoaderFirmwarePermanent;
         HalpOemDiskHole.BasePage = lo;
         HalpOemDiskHole.PageCount = hi - lo;
         if (mhi > hi) {
-            HalpOemDiskTail.MemoryType = LoaderFree;
+            HalpOemDiskTail.MemoryType = was;
             HalpOemDiskTail.BasePage = hi;
             HalpOemDiskTail.PageCount = mhi - hi;
         }
@@ -77,18 +78,52 @@ static LONG HalpOemDiskReserve(PLOADER_PARAMETER_BLOCK LoaderBlock, ULONG lo, UL
     return -1;
 }
 
-/* Phase 0.  KePhase0MapIo is the only way to look at physical memory this early; the mapping is
- * torn down again because the kernel's own phase-0 map has little room. */
+/* Phase 0 has no MmMapIoSpace, and the kernel's KePhase0MapIo hands out virtual addresses inside
+ * the window DBAT3 already maps for our I/O (MMIO_BASE_VIRT, init.c) -- two BATs on one address
+ * is undefined on the 604, and the first test hung right there, silently, one line after the
+ * VGA-aperture message.  So the HAL borrows DBAT2 for the few loads this takes: one 8 MB block
+ * over header and image (oemdisk.h keeps them in one), cache-inhibited because the firmware's DMA
+ * wrote the bytes, and cleared again before the function returns.  DBAT1/2 are the slots
+ * KePhase0MapIo would use; nothing in this HAL calls it any more. */
+#define OEMDISK_BAT_VIRT 0xA0000000u
+#define OEMDISK_BAT_BASE (OEMDISK_PHYS & ~0x7FFFFFu)
+_Static_assert(OEMDISK_IMAGE_PHYS + OEMDISK_MAX_BYTES <= OEMDISK_BAT_BASE + 0x800000, "the OEM disk must fit one 8 MB BAT block");
+
+static ULONG HalpReadDbatu(ULONG n)
+{
+    ULONG v;
+    if (n == 1) __asm__ volatile("mfdbatu %0, 1" : "=r"(v)); else __asm__ volatile("mfdbatu %0, 2" : "=r"(v));
+    return v;
+}
+
+static volatile UCHAR *HalpOemDiskBatMap(VOID)
+{
+    ULONG upper = OEMDISK_BAT_VIRT | 0xFC | 0x2;          /* BL = 8 MB, Vs */
+    ULONG lower = OEMDISK_BAT_BASE | 0x20 | 0x08 | 0x2;   /* I, G, PP = read/write */
+    __asm__ volatile("mtdbatu 2, %0" : : "r"(0)); __asm__ volatile("isync");
+    __asm__ volatile("mtdbatl 2, %0" : : "r"(lower));
+    __asm__ volatile("mtdbatu 2, %0" : : "r"(upper)); __asm__ volatile("isync");
+    return (volatile UCHAR *)OEMDISK_BAT_VIRT;
+}
+
+static VOID HalpOemDiskBatUnmap(VOID)
+{
+    __asm__ volatile("mtdbatu 2, %0" : : "r"(0)); __asm__ volatile("isync");
+}
+
 VOID HalpOemDiskInitialize(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    volatile OEMDISK_HEADER *h = (volatile OEMDISK_HEADER *)KePhase0MapIo(OEMDISK_PHYS, OEMDISK_HEADER_SIZE);
-    if (h == NULL) {
-        HalpPrint("HAL: OEM disk: cannot map %x in phase 0\n", OEMDISK_PHYS);
-        return;
-    }
+    HalpPrint("HAL: OEM disk: looking at %x (dbat1 %x dbat2 %x)\n", OEMDISK_PHYS, HalpReadDbatu(1), HalpReadDbatu(2));
+    volatile UCHAR *w = HalpOemDiskBatMap();
+    volatile OEMDISK_HEADER *h = (volatile OEMDISK_HEADER *)(w + (OEMDISK_PHYS - OEMDISK_BAT_BASE));
     ULONG magic = h->Magic, version = h->Version, phys = h->ImagePhys, bytes = h->ImageBytes;
     ULONG block = h->BlockBytes, blocks = h->BlocksRead;
-    KePhase0DeleteIoMap(OEMDISK_PHYS, OEMDISK_HEADER_SIZE);
+    UCHAR b0 = 0, b510 = 0, b511 = 0;
+    if (phys == OEMDISK_IMAGE_PHYS) {
+        volatile UCHAR *bs = w + (phys - OEMDISK_BAT_BASE);
+        b0 = bs[0]; b510 = bs[510]; b511 = bs[511];
+    }
+    HalpOemDiskBatUnmap();
 
     if (magic != OEMDISK_MAGIC) {
         HalpPrint("HAL: no OEM disk header at %x (saw %x) - Setup will have no drive A:\n", OEMDISK_PHYS, magic);
@@ -104,15 +139,7 @@ VOID HalpOemDiskInitialize(PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* The image must start with a FAT boot sector: a short jump and the 0x55AA signature.  This
      * is the same test SETUPLDR's IsFatFileStructure applies, and it is what catches a header
      * that survived from a previous boot in front of memory that did not. */
-    volatile UCHAR *bs = (volatile UCHAR *)KePhase0MapIo(phys, OEMDISK_BLOCK);
-    if (bs == NULL) {
-        HalpPrint("HAL: OEM disk: cannot map the image at %x\n", phys);
-        return;
-    }
-    BOOLEAN fat = (bs[0] == 0xEB || bs[0] == 0xE9) && bs[510] == 0x55 && bs[511] == 0xAA;
-    UCHAR b0 = bs[0], b510 = bs[510], b511 = bs[511];
-    KePhase0DeleteIoMap(phys, OEMDISK_BLOCK);
-    if (!fat) {
+    if (!((b0 == 0xEB || b0 == 0xE9) && b510 == 0x55 && b511 == 0xAA)) {
         HalpPrint("HAL: OEM disk image at %x is not a FAT floppy (%x .. %x %x) - ignored\n", phys, b0, b510, b511);
         return;
     }
@@ -120,8 +147,8 @@ VOID HalpOemDiskInitialize(PLOADER_PARAMETER_BLOCK LoaderBlock)
     ULONG lo = OEMDISK_PHYS >> PAGE_SHIFT;
     ULONG hi = (phys + bytes + (1u << PAGE_SHIFT) - 1) >> PAGE_SHIFT;
     LONG was = HalpOemDiskReserve(LoaderBlock, lo, hi);
-    if (was == LoaderFree)
-        HalpPrint("HAL: OEM disk: pages %x..%x were free - now firmware-permanent\n", lo, hi);
+    if (was == LoaderFree || was == LoaderFirmwareTemporary)
+        HalpPrint("HAL: OEM disk: pages %x..%x were type %d - now firmware-permanent\n", lo, hi, was);
     else if (was == -1)
         HalpPrint("HAL: OEM disk: pages %x..%x not covered by one descriptor - unprotected, expect trouble\n", lo, hi);
     else

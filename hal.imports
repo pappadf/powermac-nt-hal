@@ -15,8 +15,6 @@ KeInitializeDpc
 KeInitializeEvent
 KeInitializeSpinLock
 KeInsertQueueDpc
-KePhase0DeleteIoMap
-KePhase0MapIo
 KeSetTimeIncrement
 KeUpdateSystemTime
 KeWaitForSingleObject
