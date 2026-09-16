@@ -360,26 +360,7 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
         addr += n * 512
         blk += n
         left -= n
-    # The OEM disk: map header page + image, read every block, sum what read-blocks returned.
-    L += ['   \\ the whole disk again, for Windows NT: see include/oemdisk.h',
-          f'   {hdr:X} {C["OEMDISK_HEADER_SIZE"] + img_bytes:X} " map-space" nt-pe $call-method',
-          '   0']
-    addr, blk, left = img, 0, disk_blocks
-    while left > 0:
-        n = min(CHUNK, left)
-        L.append(f'   {addr:X} {blk:X} {n:X} " read-blocks" nt-fd $call-method +')
-        addr += n * 512
-        blk += n
-        left -= n
-    L += [f'   {hdr + 0x14:X} !                     \\ BlocksRead: the sum',
-          f'   {C["OEMDISK_MAGIC"]:X} {hdr:X} !         \\ Magic',
-          f'   {C["OEMDISK_VERSION"]:X} {hdr + 4:X} !       \\ Version',
-          f'   {img:X} {hdr + 8:X} !               \\ ImagePhys',
-          f'   {img_bytes:X} {hdr + 0xC:X} !          \\ ImageBytes',
-          f'   {C["OEMDISK_BLOCK"]:X} {hdr + 0x10:X} !      \\ BlockBytes',
-          f'   0 {hdr + 0x18:X} !   0 {hdr + 0x1C:X} !',
-          '   nt-fd close-dev',
-          f'   {load:X} {veneer_bytes:X} " map-space" nt-pe $call-method',
+    L += [f'   {load:X} {veneer_bytes:X} " map-space" nt-pe $call-method',
           f'   {stage:X} {load:X} {veneer_bytes:X} move',
           f'   {veneer_bytes:X} to loadsize',
           '   init-program',
@@ -388,7 +369,37 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
           # (`DEFAULT CATCH!, code=FFF00300`).  Ledger row 1 nops the veneer's own `claim` of the
           # SYSTEM PARAMETER BLOCK and RESTART BLOCK, which live down here -- so with the claim
           # skipped, somebody still has to map the page, and this is who.
-          f'   4000 1000 " map-space" nt-pe $call-method',
+          f'   4000 1000 " map-space" nt-pe $call-method']
+    # The OEM disk: map header page + image, read every block, sum what read-blocks returned.
+    # This comes *after* the three small mappings on purpose.  pe-loader's map-space is
+    # `claim-mem claim-virt do-map`, and with the 0x169000-byte region claimed first, the claim of
+    # the veneer's load address fails ("CLAIM failed") and the definition aborts before `go` --
+    # silently, from the outside, since nothing else is printed.  Claimed last, all four go
+    # through (probe of 2026-09-16; the boot-floppy note has the transcript).
+    # A full 1.44 MB read is a minute or two of a real drive's time and, on the emulator, most of
+    # the boot -- with nothing on the console meanwhile it is indistinguishable from a hang, and
+    # was read as one the first time.  So: say what is happening, and a dot per ten chunks.
+    L += ['   \\ the whole disk again, for Windows NT: see include/oemdisk.h',
+          '   ." powermac-nt-hal: reading the OEM disk into RAM (this takes a while) " ',
+          f'   {hdr:X} {C["OEMDISK_HEADER_SIZE"] + img_bytes:X} " map-space" nt-pe $call-method',
+          '   0']
+    addr, blk, left, k = img, 0, disk_blocks, 0
+    while left > 0:
+        n = min(CHUNK, left)
+        L.append(f'   {addr:X} {blk:X} {n:X} " read-blocks" nt-fd $call-method +' + ('  ." ."' if k % 10 == 9 else ''))
+        addr += n * 512
+        blk += n
+        left -= n
+        k += 1
+    L += ['   dup cr ." powermac-nt-hal: " . ." blocks of the OEM disk are in RAM" cr',
+          f'   {hdr + 0x14:X} !                     \\ BlocksRead: the sum',
+          f'   {C["OEMDISK_MAGIC"]:X} {hdr:X} !         \\ Magic',
+          f'   {C["OEMDISK_VERSION"]:X} {hdr + 4:X} !       \\ Version',
+          f'   {img:X} {hdr + 8:X} !               \\ ImagePhys',
+          f'   {img_bytes:X} {hdr + 0xC:X} !          \\ ImageBytes',
+          f'   {C["OEMDISK_BLOCK"]:X} {hdr + 0x10:X} !      \\ BlockBytes',
+          f'   0 {hdr + 0x18:X} !   0 {hdr + 0x1C:X} !',
+          '   nt-fd close-dev',
           f'   " {cd_dev}" encode-string " bootpath" _chosen (property)',
           '   ." powermac-nt-hal: starting Windows NT Setup" cr',
           '   go',
