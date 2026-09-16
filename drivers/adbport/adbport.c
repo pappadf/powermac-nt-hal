@@ -132,7 +132,6 @@ static NTSTATUS AdbCreate(PDRIVER_OBJECT DriverObject, const WCHAR *Name, ULONG 
 
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
-    UNREFERENCED_PARAMETER(RegistryPath);
     AdbLog("adbport: ADB keyboard, mouse and OEM disk for the Apple Network Server (powermac-nt-hal)");
 
     for (ULONG i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; i++) DriverObject->MajorFunction[i] = DESC(AdbDispatchOther);
@@ -170,6 +169,20 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     AdbKeyboard->Self->Flags &= ~DO_DEVICE_INITIALIZING;
     AdbPointer->Self->Flags &= ~DO_DEVICE_INITIALIZING;
     if (AdbDisk) AdbDisk->Self->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    /* Announce the ports the way every NT 4 port driver does: a value under
+     * HARDWARE\DEVICEMAP\KeyboardPort (PointerPort) named after the device, holding this
+     * driver's registry path.  kbdclass and mouclass build their port lists from those keys; with
+     * no entry mouclass still found \Device\PointerPort0 by name, but the first open of the
+     * pointer class under GUI Setup then built its ENABLE request against a port pointer that was
+     * not ours -- an IRP with no stack locations, STOP 0x35 (the boot-floppy note, E27). */
+    {
+        ULONG len = RegistryPath ? RegistryPath->Length + sizeof(WCHAR) : 0;
+        PVOID path = RegistryPath ? RegistryPath->Buffer : NULL;
+        NTSTATUS r1 = RtlWriteRegistryValue(RTL_REGISTRY_DEVICEMAP, L16("KeyboardPort"), L16("\\Device\\KeyboardPort0"), REG_SZ, path, len);
+        NTSTATUS r2 = RtlWriteRegistryValue(RTL_REGISTRY_DEVICEMAP, L16("PointerPort"), L16("\\Device\\PointerPort0"), REG_SZ, path, len);
+        if (r1 != STATUS_SUCCESS || r2 != STATUS_SUCCESS) AdbLog("adbport: DEVICEMAP registration %x %x", r1, r2);
+    }
     AdbLog("adbport: up; keyboard, pointer%s", AdbDisk ? ", OEM disk as \\Device\\Floppy0" : ", no OEM disk");
     return STATUS_SUCCESS;
 }

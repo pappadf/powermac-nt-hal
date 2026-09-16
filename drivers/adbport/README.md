@@ -12,8 +12,11 @@ loads it under `[SCSI]`, `DriverEntry` brings up all three devices (`adbport: up
 pointer, OEM disk as \Device\Floppy0`), `kbdclass` connects (`keyboard class connected`), every
 Setup screen from Welcome to *"This portion of Setup has completed successfully"* was driven from
 the ADB keyboard, and Setup's OEM-file copy read the RAM floppy through `\Device\Floppy0`. The
-mouse path has not been exercised (text-mode Setup does not use one). See the boot-floppy note,
-§4.7 and E21–E23, for the three faults found on the way — none of them in this driver.
+mouse path is exercised by the floppy-booted installed system: `mouclass` connects and, when GUI
+Setup opens the pointer class, enables the port — which found the one fault so far *in* this
+driver: it did not announce its ports under `HARDWARE\DEVICEMAP\KeyboardPort` / `PointerPort`,
+and `mouclass` enabled a port that was not ours (STOP 0x35, E27). `DriverEntry` writes both
+values now, as every NT 4 port driver does. See the boot-floppy note, §4.7 and E21–E27.
 
 ## Why it exists
 

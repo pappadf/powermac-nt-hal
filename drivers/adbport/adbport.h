@@ -232,6 +232,10 @@ NTSTATUS IoCreateDevice(PDRIVER_OBJECT DriverObject, ULONG ExtensionSize, PUNICO
 VOID IoDeleteDevice(PDEVICE_OBJECT DeviceObject);
 VOID IofCompleteRequest(PIRP Irp, CHAR PriorityBoost);
 PCONFIGURATION_INFORMATION IoGetConfigurationInformation(VOID);
+#define RTL_REGISTRY_DEVICEMAP 4
+#define REG_SZ 1
+NTSTATUS RtlWriteRegistryValue(ULONG RelativeTo, const WCHAR *Path, const WCHAR *ValueName, ULONG ValueType,
+                               PVOID ValueData, ULONG ValueLength);
 VOID KeAcquireSpinLock(PKSPIN_LOCK Lock, PKIRQL OldIrql);
 VOID KeReleaseSpinLock(PKSPIN_LOCK Lock, KIRQL OldIrql);
 PVOID MmMapLockedPages(PMDL Mdl, CHAR AccessMode);

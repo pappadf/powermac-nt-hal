@@ -17,6 +17,7 @@ MmMapIoSpace
 MmMapLockedPages
 RtlInitUnicodeString
 RtlMoveMemory
+RtlWriteRegistryValue
 RtlZeroMemory
 [HAL.dll]
 HalAnsOemDiskQuery
