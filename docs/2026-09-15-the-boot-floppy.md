@@ -235,6 +235,73 @@ It is kept because §7 may want it, and because the next medium up — a small F
 disk the user is installing to, built from their own CD, with the CD still never written — would
 have the same shape and none of the size problem. That is what §4.4 leaves for whoever is next.
 
+### 2.3 The third script: booting what Setup installed
+
+Text-mode Setup ends by asking for a restart, and on this machine a restart lands at the `0 >`
+prompt with nothing to say where the system is. `\BOOTDISK.OF` is the third script on the disk:
+
+```
+load fd:,\bootdisk.of
+load-base loadsize eval
+```
+
+It stages `\PPC\VENEERD.EXE` — the veneer with the disk patches only (`mkveneer.py --for disk`:
+rows 1, 2, 5, 17; **not** rows 3 and 4, which are the CD's and wrong for an MBR disk, walls 46
+and 47) — exactly as `BOOT.OF` stages the CD one, aims `/chosen bootpath` at the hard disk and
+goes. No OEM disk is read: the system is on the disk now.
+
+**The ARC environment is NVRAM, and always was.** The veneer's `VrEnvOpen` finds `/options`,
+and its `GetEnvVar` is `get_str_prop(/options, NAME)` with the name upper-cased — the ten ARC
+variables an ARC machine keeps in NVRAM are, on this firmware, properties of the `/options` node,
+which is where `setenv` puts things. `setenv OSLOADER …` creates one and it survives `reset-all`
+[E24]. So `SETUP.OF` stores them once, with ten `setenv` lines, and the veneer's
+`read_ARC_env_vars` overwrites every entry of its argv table from them. Nothing is injected, no
+breakpoint, no poke: the old rig's ten pokes at `OSLOADER`'s first query (ledger row 16) and its
+relocation of the loader path (wall 47) both existed only because that rig had no NVRAM
+environment. Ledger rows 11, 12 and 16 are retired.
+
+**Two claims the firmware's free list has to survive.** The veneer's descriptor code decodes a
+free range's base as `base >> 12` *plus its low twelve bits rotated to the top*, so any range that
+does not start on a page is garbage to it and fatal (`Available memory (0x8000064a, 0x36b5) is not
+in installed memory`, then `EXIT called` and the prompt — which the rig reported as a silent
+`ok`, twice, before it echoed what it had collected). Two ranges start off a page: the one after
+`load_file`'s claim of `OSLOADER.EXE`'s `SizeOfImage` (`0x4A800`, at `0x600000`), and the one
+after the floppy's own staging claim of the veneer's `0x27800` bytes. `BOOTDISK.OF` claims the
+`0x800`-byte rest of the loader's last page before `go`, and both boot scripts now claim whole
+pages for the veneer (`0x28000`), as pe-loader itself does. SETUPLDR is 98 pages exactly, which
+is why the CD boot never met either.
+
+**What the run of 16 September 13:53 showed**, from the two typed lines with no other input:
+
+```
+Make selection using arrow keys and 'Enter', or press ESC to cancel
+* Windows NT Workstation Version 4.00
+Seconds remaining: 5 … 0
+Booting from 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)\os\winnt40\osloader.exe'
+OS Loader V4.00
+HAL: halshinr 0.1 … (phase 0)
+HAL: boot device multi(0)scsi(1)disk(0)rdisk(0)partition(2)
+HAL: hal path \os\winnt40\, options NODEBUG
+HAL: nt boot path \WINNT\, setup block 00000000
+HAL: no OEM disk header at 03b97000 (saw 55555556) - Setup will have no drive A:
+Microsoft (R) Windows NT (TM) Version 4.0 (Build 1381: Service Pack 1).
+HAL: module adbport.sys at 80093000 size 00008000
+adbport: up; keyboard, pointer, no OEM disk
+adbport: mouse class connected, service e703c4bc
+adbport: keyboard class connected, service e70444bc
+HAL: C: -> \Device\Harddisk0\Partition1
+HAL: D: -> \Device\Harddisk0\Partition2
+HAL: system path -> 'D:\WINNT'
+Checking file system on D: … CHKDSK is verifying files and directories...
+```
+
+The menu text, the countdown and the loader path are the NVRAM variables read back.
+`adbport.sys` is loaded as a boot driver from the registry entry text-mode Setup wrote for its
+`[SCSI]` OEM entry — nothing on the floppy is involved once the veneer has handed over — and
+the *mouse* class connects too, which text mode never exercised. `autochk` runs because this
+is the first boot of a freshly installed volume; GUI Setup follows it, and that is where the run
+stands.
+
 ## 3. What we have actually verified
 
 Every row was measured on the emulator, not inferred.
@@ -263,6 +330,7 @@ Every row was measured on the emulator, not inferred.
 | **E22** | **Where the OEM image sits in RAM decides whether SETUPLDR can read the CD** | With the image claimed at `0x3A00000`, in the middle of free memory, every run stopped at *"Please insert the disk labeled Windows NT Workstation CD-ROM into Drive A:"* — SETUPLDR's reaction to a failed open of its own source. A floppy that claimed the region but read nothing failed identically, so the 2880 reads are innocent. From the `0 >` prompt after the claim, the CD still opened and read `CD001`, the floppy still read, sixteen align-4 claims on `/chosen`'s `memory` and `mmu` instances all succeeded — the firmware was fine. `-vrdebug 530` in `bootargs` showed the veneer's descriptor list (everything above 8 MB `FirmwareTemporary`, three `VrOpen`s of the CD succeeding) and then the fourth: `VrOpen: Entry - Path: multi(0)scsi(0)cdrom(0)fdisk(0)` → **`OFOpen('')`** → `IHandle: 0`. Claimed at `0x3B97000` instead — ending exactly at the veneer's staging area, so `/memory`'s `available` list gains no entry — the same run reaches the computer-type menu and the OEM prompt. What in the veneer turns one extra `available` entry into an empty path is not known |
 | **E23** | **`KePhase0MapIo` cannot be used by this HAL, and the veneer types high memory FirmwareTemporary** | First run to reach the kernel: the HAL's trace ends at `VGA aperture sits in a type-9 descriptor, not free - left alone`, the line before `HalpOemDiskInitialize`, with none of that function's five messages — it died in `KePhase0MapIo(0x3B97000, 0x1000)`, whose addresses fall in the `0xB0000000` window DBAT3 already maps (`ans.h` said so; `oemdisk.c` was the only caller). Mapped through a borrowed DBAT2 instead: `HAL: OEM disk: 1474560 bytes at 03b98000, 2880 blocks of 512`, and `pages 3b97..3d00 were type 5` — FirmwareTemporary, per the veneer's `-vrdebug 0x10` dump of every range above 8 MB — `now firmware-permanent` |
 | **E24** | **The ARC environment is Open Firmware's `/options` node, and the veneer chokes on its own claim of `OSLOADER.EXE`** | `setenv OSLOADER …` at the `0 >` prompt appears as an `/options` property and survives `reset-all`; the veneer's `VrEnvOpen` finds `/options` and `GetEnvVar` is `get_str_prop(/options, UPPERCASE(name))`, so `SETUP.OF` stores the ten variables once. Booting from the floppy with a `--for disk` veneer: the veneer's **boot menu** appears — *Windows NT Workstation Version 4.00*, a five-second countdown — then `Booting from 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)\os\winnt40\osloader.exe'`, all from NVRAM, and then **`Available memory (0x8000064a, 0x36b5) is not in installed memory`**. `load_file` claims `SizeOfImage` bytes at `ImageBase` (`0x80600000`, `0x4A800`); the firmware's free list then starts at `0x64A800`, and the veneer's page decoder (`base >> 12` plus the low twelve bits rotated to the top) makes that `0x8000064A`. SETUPLDR is `0x62000` bytes, 98 pages, so the CD boot never saw it. `BOOTDISK.OF` claims the `0x800`-byte sliver before `go` |
+| **E25** | **The installed system boots from the floppy, no pokes** | `load fd:,\bootdisk.of` + eval, after `SETUP.OF` once: the veneer's menu with *Windows NT Workstation Version 4.00*, `OS Loader V4.00`, the kernel banner, this HAL with `setup block 00000000` and `system path -> 'D:\WINNT'`, `adbport.sys` as a boot driver from Setup's registry (`mouse class connected`, `keyboard class connected`), drive letters C: and D:, and `autochk` checking D: (§2.3, run of 16 September 13:53) |
 | **E19** | **An OEM `[SCSI]` entry delivers the ADB keyboard driver** | `S` at the mass-storage screen, `Other`, our disk, and *"Apple Desktop Bus keyboard and mouse (via Cuda)"* is offered, chosen and loaded — `HAL: module usbadb.sys at 806e7000`. `i8042prt.sys` and `kbdclass.sys` still load from the CD alongside it; `Setup did not find a keyboard` never appears, Setup reaches its Welcome screen, and two Enter presses **on the ADB keyboard** carry it to the licence agreement. The SCSI class is the one SETUPLDR loads any number of drivers for, in a loop, without checking what they are |
 | **E18** | **The boot medium is the source medium** | Booted from the floppy with its own `TXTSETUP.SIF`, SETUPLDR asks for the tag file `\CDROM_W.40` *in the drive it booted from*, and never looks at the CD — it re-prompts for ever. Give the floppy that tag and it accepts the floppy as the distribution and dies at `%SRR0: 00000000` when the files are not there |
 | **E17** | **Our HAL is loaded from the floppy, and Setup carries on** | `Setup is loading files (Apple Network Server 500/700)...` then Configuration Data, Setup Font, Locale, Windows NT Setup, PCMCIA, SCSI Port Driver, `Symbios Logic C810 PCI SCSI Host Adapter`, ESDI/IDE, NTFS, the Cirrus display, floppy, CD-ROM, SCSI disk, keyboard, FAT and CDFS — then `HAL: halshinr 0.1 … (phase 0)`, 54 memory descriptors, both 53C825As, `IoReadPartitionTable`, `C:`/`D:`/`E:`, and `system path -> 'E:\PPC'` |
