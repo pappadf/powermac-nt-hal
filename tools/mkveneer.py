@@ -53,10 +53,17 @@ SETUPLDR_PATH = (0x5CD30, b'\\os\\winnt\\osloader.exe', b'\\PPC\\SETUPLDR' + b'\
                  "the boot file the veneer opens on the CD")
 SETUPLDR_INSN = (0x53DB0, 0x554AA016, 0x39400000, 4, "li r10,0 in the path derivation")
 
+# Row 3 is CD-only too: an MBR disk needs 'partition(N)' on its ARC paths and ':N' on the Open
+# Firmware argument -- they are what give NT partition-relative sectors (wall 46).  mkbootscript.py
+# undoes both for a disk boot; a `--for disk` veneer simply never gets them.
 BYTE_PATCHES = [
     (0x5D0C0, ord('p'), 0, 3, "blank the 'partition(1)' the veneer appends to every ARC path"),
     (0x5E168, ord(':'), 0, 3, "blank the ':0' appended to the Open Firmware argument"),
 ]
+# Wall 47 -- the veneer's shipped boot-file buffer holding '\\os\\winnt\\osloader.exe' -- needs no
+# patch for a disk: read_ARC_env_vars overwrites every argv slot with the NVRAM variable of the
+# same name when one exists, and setup.of stores OSLOADER there (mkbootfloppy.py).  The old rig
+# had no NVRAM environment, which is the only reason it had to relocate the path.
 SCSI_MODEL = (0x5F420, b'NCR,53C810\0', b'NCR,825A\0\0\0', 5,
               "the SCSI identifier Setup's mass-storage detection matches to symc810.sys")
 # Row 17 is the floppy, and it is one string.  `convert_name` classifies a node by its Open
@@ -104,7 +111,7 @@ def main():
         struct.pack_into('<I', d, off, new)
         print(f'  row {row}  VA {va:#07x}  {want:#010x} -> {new:#010x}   {why}')
 
-    for va, want, new, row, why in BYTE_PATCHES:
+    for va, want, new, row, why in (BYTE_PATCHES if a.target == 'cd' else []):
         off = ven.va2off(va)
         if d[off] != want:
             sys.exit(f'{va:#x} holds {d[off]:#04x}, expected {want:#04x} — refusing to patch')

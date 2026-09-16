@@ -337,6 +337,11 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
     C = oemdisk_constants()
     hdr, img = C['OEMDISK_PHYS'], C['OEMDISK_PHYS'] + C['OEMDISK_HEADER_SIZE']
     img_bytes = disk_blocks * C['OEMDISK_BLOCK']
+    # Claim whole pages for the veneer's two areas.  The file is 0x27800 bytes, 39 1/2 pages; claim
+    # exactly that and the firmware's free list acquires a boundary at 0x3D27800, which the veneer's
+    # own descriptor code decodes as page 0x80003D27 and rejects ("is not in installed memory",
+    # E24).  pe-loader rounds its own claims the same way (`loadsize fff + -1000 and`).
+    claim = (veneer_bytes + 0xFFF) & ~0xFFF
     L = ['\\ powermac-nt-hal -- start Windows NT Setup on an Apple Network Server 500/700',
          '\\',
          '\\ Run this at the 0 > prompt with:',
@@ -351,7 +356,7 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
          '',
          ': nt-boot',
          f'   " /packages/pe-loader" open-dev to nt-pe',
-         f'   {stage:X} {veneer_bytes:X} " map-space" nt-pe $call-method',
+         f'   {stage:X} {claim:X} " map-space" nt-pe $call-method',
          f'   " {fd_dev}" open-dev to nt-fd']
     addr, blk, left = stage, veneer_block, veneer_blocks
     while left > 0:
@@ -360,7 +365,7 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
         addr += n * 512
         blk += n
         left -= n
-    L += [f'   {load:X} {veneer_bytes:X} " map-space" nt-pe $call-method',
+    L += [f'   {load:X} {claim:X} " map-space" nt-pe $call-method',
           f'   {stage:X} {load:X} {veneer_bytes:X} move',
           f'   {veneer_bytes:X} to loadsize',
           '   init-program',
@@ -409,23 +414,115 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
     return '\r\n'.join(L) + '\r\n'
 
 
-def setup_script(real_base=0x3F00000, load_base=0x3E00000):
+def arc_environment(disk_arc='multi(0)scsi(1)disk(0)rdisk(0)', sys_part=1, os_part=2,
+                    osloader=r'\os\winnt40\osloader.exe', winnt=r'\WINNT', options='NODEBUG',
+                    identifier='Windows NT Workstation Version 4.00'):
+    """The ten ARC variables a boot of the installed system reads, as (NAME, value)."""
+    return [
+        ('SYSTEMPARTITION', f'{disk_arc}partition({sys_part})'),
+        ('OSLOADER',        f'{disk_arc}partition({sys_part}){osloader}'),
+        ('OSLOADPARTITION', f'{disk_arc}partition({os_part})'),
+        ('OSLOADFILENAME',  winnt),
+        ('OSLOADOPTIONS',   options),
+        ('LOADIDENTIFIER',  identifier),
+        ('AUTOLOAD',        'YES'),
+        ('COUNTDOWN',       '5'),
+        ('LASTKNOWNGOOD',   'FALSE'),
+        ('PROCESSORS',      '1'),
+    ]
+
+
+def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev,
+                     loader_base=0x80600000, loader_size=0x4A800, stage=0x3D00000, load=0x3E00000):
+    """\\BOOTDISK.OF: boot the system text-mode Setup installed on the hard disk.
+
+    The same shape as \\BOOT.OF with the OEM disk left out, a `--for disk` veneer read instead of
+    the CD one and /chosen bootpath aimed at the disk.  The ARC environment is not here: it is
+    NVRAM, set once by \\SETUP.OF (see setup_script), which is where the veneer reads it from.
+
+    loader_base/loader_size are OSLOADER.EXE's ImageBase and SizeOfImage.  The veneer's load_file
+    claims exactly SizeOfImage bytes at ImageBase's physical address, and NT 4.0's loader is
+    0x4A800 bytes -- not a page multiple.  The firmware's free list then starts at 0x64A800, and
+    the veneer's own decoder (page = base >> 12, plus the low twelve bits rotated to the top)
+    turns that into page 0x8000064A, which "is not in installed memory": a fatal, and EXIT back
+    to the prompt.  SETUPLDR is 0x62000 bytes, 98 pages exactly, which is why the CD boot never
+    met this.  So the sliver from the end of the image to the next page boundary is claimed here,
+    before `go`; the veneer's claim still fits, and the free list stays page-aligned (E24)."""
+    # Claim whole pages for the veneer's two areas.  The file is 0x27800 bytes, 39 1/2 pages; claim
+    # exactly that and the firmware's free list acquires a boundary at 0x3D27800, which the veneer's
+    # own descriptor code decodes as page 0x80003D27 and rejects ("is not in installed memory",
+    # E24).  pe-loader rounds its own claims the same way (`loadsize fff + -1000 and`).
+    claim = (veneer_bytes + 0xFFF) & ~0xFFF
+    L = ['\\ powermac-nt-hal -- boot the Windows NT system installed on the hard disk',
+         '\\',
+         '\\ Run this at the 0 > prompt with:',
+         '\\     load fd:,\\bootdisk.of',
+         '\\     load-base loadsize eval',
+         '\\',
+         '\\ The veneer read here is the `--for disk` one: no CD-era patches, and the loader path',
+         '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment is in NVRAM, from setup.of;',
+         '\\ nothing is patched at run time.',
+         '',
+         '0 value nt-pe',
+         '0 value nt-fd',
+         '',
+         ': nt-boot-disk',
+         f'   " /packages/pe-loader" open-dev to nt-pe',
+         f'   {stage:X} {claim:X} " map-space" nt-pe $call-method',
+         f'   " {fd_dev}" open-dev to nt-fd']
+    addr, blk, left = stage, veneer_block, veneer_blocks
+    while left > 0:
+        n = min(CHUNK, left)
+        L.append(f'   {addr:X} {blk:X} {n:X} " read-blocks" nt-fd $call-method drop')
+        addr += n * 512
+        blk += n
+        left -= n
+    L += ['   nt-fd close-dev',
+          f'   {load:X} {claim:X} " map-space" nt-pe $call-method',
+          f'   {stage:X} {load:X} {veneer_bytes:X} move',
+          f'   {veneer_bytes:X} to loadsize',
+          '   init-program',
+          # the same low page boot.of maps, for the same reason (ledger row 1)
+          f'   4000 1000 " map-space" nt-pe $call-method']
+    pad = (-loader_size) % 0x1000
+    if pad:
+        end = (loader_base & 0x7FFFFFFF) + loader_size
+        L += ['   \\ the loader is not a whole number of pages; claim the rest of its last page (E24)',
+              f'   {end:X} {pad:X} " map-space" nt-pe $call-method']
+    L += [f'   " {disk_dev}" encode-string " bootpath" _chosen (property)',
+          '   ." powermac-nt-hal: starting the installed Windows NT" cr',
+          '   go',
+          ';',
+          '',
+          'nt-boot-disk']
+    return '\r\n'.join(L) + '\r\n'
+
+
+def setup_script(env=None, real_base=0x3F00000, load_base=0x3E00000):
     """The once-per-machine half.  `little-endian?` is firmware NVRAM and `reset-all` is what
     applies it, so no medium can set it before the firmware has read the medium -- this cannot be
-    folded into boot.of, and any claim of "insert and go" on a virgin machine is false."""
-    return '\r\n'.join([
-        '\\ powermac-nt-hal -- configure this machine for Windows NT.  Run once:',
-        '\\     load fd:,\\setup.of',
-        '\\     load-base loadsize eval',
-        '\\ The machine resets at the end; then run boot.of the same way, every boot.',
-        '',
-        '." powermac-nt-hal: setting little-endian mode, then resetting" cr',
-        'setenv little-endian? true',
-        'setenv real-mode? false',
-        f'setenv real-base {real_base:X}',
-        f'setenv load-base {load_base:X}',
-        'reset-all',
-    ]) + '\r\n'
+    folded into boot.of, and any claim of "insert and go" on a virgin machine is false.
+
+    `env` is the ARC environment (arc_environment()), stored the same way: the veneer reads ARC
+    variables as properties of /options, which is this firmware's NVRAM -- `setenv NAME value`
+    creates one and it survives reset-all (probed 2026-09-16).  A real ARC machine keeps these in
+    NVRAM too, written by ARCINST; this is that, and it retires ledger rows 11, 12 and 16."""
+    L = ['\\ powermac-nt-hal -- configure this machine for Windows NT.  Run once:',
+         '\\     load fd:,\\setup.of',
+         '\\     load-base loadsize eval',
+         '\\ The machine resets at the end; then run boot.of the same way, every boot.',
+         '',
+         '." powermac-nt-hal: setting little-endian mode, then resetting" cr',
+         'setenv little-endian? true',
+         'setenv real-mode? false',
+         f'setenv real-base {real_base:X}',
+         f'setenv load-base {load_base:X}']
+    if env:
+        L.append('\\ the ARC environment of the installed system, where the veneer reads it: NVRAM')
+        L += [f'setenv {name} {value}' for name, value in env]
+    L.append('reset-all')
+    return '\r\n'.join(L) + '\r\n'
+
 
 
 def txtsetup_oem(display, adb=False):
@@ -456,6 +553,22 @@ def main():
     ap.add_argument('--no-adb-driver', action='store_true', help='leave the [SCSI] class off the disk')
     ap.add_argument('--boot-script', metavar='PATH',
                     help='use this file as \\BOOT.OF instead of the generated one')
+    ap.add_argument('--disk-veneer', metavar='PATH',
+                    help='VENEER.EXE patched by `mkveneer.py --for disk`; placed as \\PPC\\VENEERD.EXE, '
+                         'contiguous, with \\BOOTDISK.OF to boot the installed system from it')
+    ap.add_argument('--osloader-exe', metavar='PATH',
+                    help="OSLOADER.EXE (the CD's PPC/OSLOADER.EXE, or the installed disk's), for its "
+                         "ImageBase and SizeOfImage; default: NT 4.0's, 0x80600000 and 0x4A800")
+    ap.add_argument('--disk-dev', default='/bandit/53c825@12/sd@0,0',
+                    help='the Open Firmware path of the hard disk, for /chosen bootpath')
+    ap.add_argument('--disk-arc', default='multi(0)scsi(1)disk(0)rdisk(0)',
+                    help='the same disk as an ARC path, for the environment')
+    ap.add_argument('--system-partition', type=int, default=1)
+    ap.add_argument('--os-partition', type=int, default=2)
+    ap.add_argument('--osloader', default=r'\os\winnt40\osloader.exe')
+    ap.add_argument('--winnt', default=r'\WINNT')
+    ap.add_argument('--os-options', default='NODEBUG')
+    ap.add_argument('--identifier', default='Windows NT Workstation Version 4.00')
     ap.add_argument('--fd-dev', default='/bandit/gc/swim3',
                     help='Open Firmware path of this drive, for boot.of to read the veneer from')
     ap.add_argument('--cd-dev', default='/bandit/53c825@11/sd@0,0',
@@ -506,12 +619,18 @@ def main():
     if vcluster != 2:
         sys.exit('the veneer did not land on cluster 2 — it must be allocated first')
     vblocks = (len(veneer) + SECTOR - 1) // SECTOR
+    dveneer = read(a.disk_veneer) if a.disk_veneer else None
+    if dveneer is not None:
+        dcluster, dlba = fs.alloc(dveneer)          # second, so contiguous as well
+        dblocks = (len(dveneer) + SECTOR - 1) // SECTOR
 
     # `\\PPC` mirrors the CD, because the veneer's boot-file path is `\\PPC\\SETUPLDR` and it
     # resolves that on whatever device it booted from.  The OEM files go in the **root**: a
     # `[Disks]` line's third field is the directory Setup prefixes to every filename it reads
     # from the disk, and Setup asked for `\\halshinr.dll` when that field was `\\`.
     ppc = [fs.dirent('VENEER.EXE', vcluster, len(veneer))]
+    if dveneer is not None:
+        ppc.append(fs.dirent('VENEERD.EXE', dcluster, len(dveneer)))
     root = []
     for name, path, where in (('SETUPLDR', a.setupldr, ppc),
                               ('TXTSETUP.SIF', a.sif, ppc),
@@ -542,13 +661,25 @@ def main():
                                  GEOM['total']).encode('ascii'))
         c, _ = fs.alloc(boot)
         root.append(fs.dirent('BOOT.OF', c, len(boot)))
-        setup = setup_script().encode('ascii')
+        env = arc_environment(a.disk_arc, a.system_partition, a.os_partition, a.osloader,
+                              a.winnt, a.os_options, a.identifier)
+        setup = setup_script(env).encode('ascii')
         c2, _ = fs.alloc(setup)
         root.append(fs.dirent('SETUP.OF', c2, len(setup)))
         print(f'  \\SETUP.OF  {len(setup)} bytes   once per machine: load fd:,\\setup.of  '
               f'then  load-base loadsize eval')
         print(f'  \\BOOT.OF   {len(boot)} bytes   every boot:       load fd:,\\boot.of   '
               f'then  load-base loadsize eval')
+        if dveneer is not None:
+            lb, ls = 0x80600000, 0x4A800
+            if a.osloader_exe:
+                h = read(a.osloader_exe)
+                lb, ls = struct.unpack_from('<I', h, 20 + 28)[0], struct.unpack_from('<I', h, 20 + 56)[0]
+            bd = boot_disk_script(dlba, dblocks, len(dveneer), a.fd_dev, a.disk_dev, lb, ls).encode('ascii')
+            c3, _ = fs.alloc(bd)
+            root.append(fs.dirent('BOOTDISK.OF', c3, len(bd)))
+            print(f'  \\BOOTDISK.OF   {len(bd)} bytes   the installed system: load fd:,\\bootdisk.of  '
+                  f'then  load-base loadsize eval')
 
     if a.tag:
         data = read(a.tag)
@@ -576,6 +707,9 @@ def main():
           f'{vblocks} blocks ({vblocks:#x}) — contiguous')
     print(f'  read it with:  mkcoldboot.py --veneer-dev /bandit/gc/swim3 '
           f'--veneer-block {vlba:#x} --veneer-blocks {vblocks:#x}')
+    if dveneer is not None:
+        print(f'  \\PPC\\VENEERD.EXE  {len(dveneer)} bytes at block {dlba} ({dlba:#x}), '
+              f'{dblocks} blocks ({dblocks:#x}) — contiguous, for \\BOOTDISK.OF')
 
 
 if __name__ == '__main__':
