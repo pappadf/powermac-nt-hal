@@ -432,13 +432,26 @@ def arc_environment(disk_arc='multi(0)scsi(1)disk(0)rdisk(0)', sys_part=1, os_pa
     ]
 
 
-def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev,
+def env_property_lines(env, indent='   '):
+    """Forth that puts each ARC variable on /options as a property, inside a colon definition.
+
+    The veneer's GetEnvVar is get_str_prop(/options, NAME): the ARC environment is, on this
+    firmware, the /options node.  It is set here, by the boot script, for this boot -- not stored
+    in NVRAM by setup.of -- because the veneer honours OSLOADER over its own boot path, so a
+    stored environment turns the *CD* boot into a boot of the disk (E26).  `setenv` is the
+    interactive form and reads the rest of the line, so it cannot sit in a definition; (property)
+    can."""
+    return [f'{indent}" {value}" encode-string " {name}" " /options" find-package drop (property)'
+            for name, value in env]
+
+
+def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev, env,
                      loader_base=0x80600000, loader_size=0x4A800, stage=0x3D00000, load=0x3E00000):
     """\\BOOTDISK.OF: boot the system text-mode Setup installed on the hard disk.
 
     The same shape as \\BOOT.OF with the OEM disk left out, a `--for disk` veneer read instead of
-    the CD one and /chosen bootpath aimed at the disk.  The ARC environment is not here: it is
-    NVRAM, set once by \\SETUP.OF (see setup_script), which is where the veneer reads it from.
+    the CD one, /chosen bootpath aimed at the disk, and the ARC environment set on /options for
+    this boot (env_property_lines).
 
     loader_base/loader_size are OSLOADER.EXE's ImageBase and SizeOfImage.  The veneer's load_file
     claims exactly SizeOfImage bytes at ImageBase's physical address, and NT 4.0's loader is
@@ -460,8 +473,8 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
          '\\     load-base loadsize eval',
          '\\',
          '\\ The veneer read here is the `--for disk` one: no CD-era patches, and the loader path',
-         '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment is in NVRAM, from setup.of;',
-         '\\ nothing is patched at run time.',
+         '\\ \\OS\\WINNT40\\OSLOADER.EXE baked in.  The ARC environment goes onto /options for this',
+         '\\ boot only; nothing is patched at run time.',
          '',
          '0 value nt-pe',
          '0 value nt-fd',
@@ -490,7 +503,9 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
         L += ['   \\ the loader is not a whole number of pages; claim the rest of its last page (E24)',
               f'   {end:X} {pad:X} " map-space" nt-pe $call-method']
     L += [f'   " {disk_dev}" encode-string " bootpath" _chosen (property)',
-          '   ." powermac-nt-hal: starting the installed Windows NT" cr',
+          '   \\ the ARC environment for this boot, on the node the veneer reads it from']
+    L += env_property_lines(env)
+    L += ['   ." powermac-nt-hal: starting the installed Windows NT" cr',
           '   go',
           ';',
           '',
@@ -498,15 +513,14 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
     return '\r\n'.join(L) + '\r\n'
 
 
-def setup_script(env=None, real_base=0x3F00000, load_base=0x3E00000):
+def setup_script(real_base=0x3F00000, load_base=0x3E00000):
     """The once-per-machine half.  `little-endian?` is firmware NVRAM and `reset-all` is what
     applies it, so no medium can set it before the firmware has read the medium -- this cannot be
     folded into boot.of, and any claim of "insert and go" on a virgin machine is false.
 
-    `env` is the ARC environment (arc_environment()), stored the same way: the veneer reads ARC
-    variables as properties of /options, which is this firmware's NVRAM -- `setenv NAME value`
-    creates one and it survives reset-all (probed 2026-09-16).  A real ARC machine keeps these in
-    NVRAM too, written by ARCINST; this is that, and it retires ledger rows 11, 12 and 16."""
+    The ARC environment is deliberately *not* stored here, although `setenv` would persist it:
+    the veneer honours a stored OSLOADER over its own boot path, so an environment in NVRAM turns
+    boot.of's CD boot into a boot of the disk (E26).  bootdisk.of sets it on /options per boot."""
     L = ['\\ powermac-nt-hal -- configure this machine for Windows NT.  Run once:',
          '\\     load fd:,\\setup.of',
          '\\     load-base loadsize eval',
@@ -517,9 +531,6 @@ def setup_script(env=None, real_base=0x3F00000, load_base=0x3E00000):
          'setenv real-mode? false',
          f'setenv real-base {real_base:X}',
          f'setenv load-base {load_base:X}']
-    if env:
-        L.append('\\ the ARC environment of the installed system, where the veneer reads it: NVRAM')
-        L += [f'setenv {name} {value}' for name, value in env]
     L.append('reset-all')
     return '\r\n'.join(L) + '\r\n'
 
@@ -663,7 +674,7 @@ def main():
         root.append(fs.dirent('BOOT.OF', c, len(boot)))
         env = arc_environment(a.disk_arc, a.system_partition, a.os_partition, a.osloader,
                               a.winnt, a.os_options, a.identifier)
-        setup = setup_script(env).encode('ascii')
+        setup = setup_script().encode('ascii')
         c2, _ = fs.alloc(setup)
         root.append(fs.dirent('SETUP.OF', c2, len(setup)))
         print(f'  \\SETUP.OF  {len(setup)} bytes   once per machine: load fd:,\\setup.of  '
@@ -675,7 +686,7 @@ def main():
             if a.osloader_exe:
                 h = read(a.osloader_exe)
                 lb, ls = struct.unpack_from('<I', h, 20 + 28)[0], struct.unpack_from('<I', h, 20 + 56)[0]
-            bd = boot_disk_script(dlba, dblocks, len(dveneer), a.fd_dev, a.disk_dev, lb, ls).encode('ascii')
+            bd = boot_disk_script(dlba, dblocks, len(dveneer), a.fd_dev, a.disk_dev, env, lb, ls).encode('ascii')
             c3, _ = fs.alloc(bd)
             root.append(fs.dirent('BOOTDISK.OF', c3, len(bd)))
             print(f'  \\BOOTDISK.OF   {len(bd)} bytes   the installed system: load fd:,\\bootdisk.of  '
