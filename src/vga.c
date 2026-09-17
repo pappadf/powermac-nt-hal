@@ -28,6 +28,7 @@ static ULONG HalpCharW, HalpCharH, HalpBytesPerRow;
 ULONG HalpFbCols, HalpFbRows, HalpFbCol, HalpFbRow;
 
 static VOID Seq(UCHAR i, UCHAR v)  { MmioWrite8(VGA_PORT(0x3C4), i); MmioWrite8(VGA_PORT(0x3C5), v); }
+static UCHAR SeqRead(UCHAR i)      { MmioWrite8(VGA_PORT(0x3C4), i); return MmioRead8(VGA_PORT(0x3C5)); }
 static VOID Crtc(UCHAR i, UCHAR v) { MmioWrite8(VGA_PORT(0x3D4), i); MmioWrite8(VGA_PORT(0x3D5), v); }
 static VOID Gr(UCHAR i, UCHAR v)   { MmioWrite8(VGA_PORT(0x3CE), i); MmioWrite8(VGA_PORT(0x3CF), v); }
 
@@ -46,6 +47,18 @@ static VOID HalpVgaMode640x480x8(VOID)
      * the rest of this file uses, and that a video driver taking the chip over will look for. */
     MmioWrite8(VGA_PORT(0x3C2), 0xE3);
     Seq(0x06, 0x12);   /* unlock the Cirrus extension registers */
+    /* SR17[6] chooses where the memory-mapped BLT registers live once linear addressing is on:
+     * '0' = the 256 bytes at B800:0, '1' = the last 256 bytes of linear space (TRM 9.13).  A
+     * PC's video BIOS leaves it clear, and cirrus.sys assumes as much: it ORs bit 2 into
+     * whatever it reads back and then writes its registers at B8000.  Open Firmware's own
+     * Cirrus driver, which has run before us whenever the console is on the screen, leaves
+     * SR17 = $62 -- bit 6 SET.  The driver then gets $66, enables linear addressing (SR07 =
+     * $F1) and its register block moves out from under it: every BLT register write lands in
+     * display memory as pixels, START reads back as $0, no BLT ever runs, and GUI-mode Setup
+     * comes up as the Windows NT Setup backdrop with one grey button (17 September, browser
+     * only: headless runs had the OF console on ttya, so OF never touched the card).  Clear
+     * only bit 6; the rest of the register is OF's business. */
+    Seq(0x17, (UCHAR)(SeqRead(0x17) & ~0x40u));
     Seq(0x01, 0x01);   /* 8 dots per character clock */
     Seq(0x07, 0x01);   /* extended packed-pixel mode, 8 bpp */
     Seq(0x04, 0x0E);   /* chain-4, no odd/even: a flat byte-per-pixel map */
