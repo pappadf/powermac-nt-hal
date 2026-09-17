@@ -140,7 +140,7 @@ transport, and a text console on the Cirrus 54M30.
 ## Building
 
 ```bash
-make          # -> build/hal.dll
+make                                       # -> build/hal.dll, build/adbport.sys
 ```
 
 Needs `clang-18`, `lld-18` and `python3`; any recent LLVM works. The build is reproducible —
@@ -149,7 +149,49 @@ if you want a real one). There is no Microsoft tool, header or import library in
 [`tools/elf2pe.py`](tools/elf2pe.py) turns lld's ELF output into an NT PowerPC PE with function
 descriptors, a pre-filled import table and base relocations, the way NT's boot loader needs it.
 
-## Testing it
+## Installing NT: bring your own CD, get a boot floppy
+
+Everything this project adds travels on **one 1.44 MB floppy image** that Setup reads as an
+ordinary manufacturer-supplied support disk. Your CD is never written to — not even in a
+copy-on-write layer.
+
+```bash
+make floppy ISO=/path/to/your/windows-nt-4.0-ppc.iso     # -> build/boot-floppy.img
+```
+
+That is the whole build. It compiles the HAL and the ADB driver, takes the four files it cannot
+ship off the image you named — the ARC veneer, `SETUPLDR`, and the Cirrus driver pair,
+decompressing the cabinet the CD stores one of them in — patches the veneer twice, and lays out
+the floppy.
+
+Then, with the emulator (below), at the Open Firmware `0 >` prompt:
+
+```forth
+load fd:,\setup.of         \ once per machine; it resets at the end
+load-base loadsize eval
+
+load fd:,\boot.of          \ every boot, to install from the CD
+load-base loadsize eval
+```
+
+and `\bootdisk.of` in place of `\boot.of` to start what you installed. The machine wants
+**64 MB** of RAM — not the 32 MB default — with the CD at SCSI id 0 on the first fast/wide
+controller and the disk at id 0 on the second.
+
+**The [wiki](https://github.com/pappadf/powermac-nt-hal/wiki) has the screen-by-screen
+walkthrough**, including the two steps that are easy to miss and expensive to get wrong: pressing
+`S` at the mass-storage screen to add the ADB driver (without it Setup dies with *"Setup did not
+find a keyboard"* several screens later), and leaving the file system as FAT.
+
+> ### The floppy image cannot be redistributed
+>
+> Five of its eleven files are Microsoft's, off your CD, and three of those are modified. Nothing
+> of theirs is stored in this repository — every one is read from the image you name on the
+> command line, which is why `make floppy` needs one. The two files that *are* ours,
+> `HALSHINR.DLL` and `ADBPORT.SYS`, are GPL-2.0-only and may be distributed with their source.
+> See [`PROVENANCE.md`](PROVENANCE.md).
+
+## The emulator
 
 Development is against the [Granny Smith](https://github.com/pappadf/granny-smith) emulator,
 which has the breakpoints, device logpoints and checkpoints that make this tractable.
@@ -157,22 +199,13 @@ which has the breakpoints, device logpoints and checkpoints that make this tract
 > **The emulator support this needs is not in Granny Smith's mainline yet.** It is
 > [PR #135](https://github.com/pappadf/granny-smith/pull/135), branch
 > `ppc-le-mode-and-bandit-lane-reversal` — PowerPC little-endian mode, Bandit byte-lane
-> reversal, and the Cirrus 54M30 identification registers. Build `main` and the firmware's
-> little-endian reboot fails, long before anything mentions NT.
+> reversal, the Cirrus 54M30 identification registers and its BitBLT engine. Build `main` and
+> the firmware's little-endian reboot fails, long before anything mentions NT.
 > **[`docs/EMULATOR.md`](docs/EMULATOR.md) is the step-by-step setup** — which branch, how to
 > check you actually have it, how to build it, and what you must supply yourself (ROM, NT CD,
 > disk images).
 
-Once that is in place: build, write `hal.dll` over `HALEAGLE.DLL` on a *copy* of the CD, restore
-a checkpoint at Setup's computer-type menu, and drive it:
-
-```bash
-python3 tools/run-hal.py --ckpt <menu.ckpt> --iso <copy-of-cd.iso> --out run.log \
-        --delta-patch build/hal.dll --screenshot shot.png
-```
-
-[`docs/EMULATOR.md`](docs/EMULATOR.md) is the setup walkthrough,
-[`tools/README.md`](tools/README.md) documents every option, and
+[`tools/README.md`](tools/README.md) documents every option of every tool, and
 [`docs/CHARTER.md`](docs/CHARTER.md) §3.1 has the firmware sequence and the gotchas.
 
 ## Borrowed parts, and one you should know about

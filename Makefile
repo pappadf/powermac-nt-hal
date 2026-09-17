@@ -79,7 +79,24 @@ $(BUILD)/adbport.sys: $(BUILD)/adbport.elf $(ADB)/adbport.exports $(TOOLS)/elf2p
 disasm: $(BUILD)/hal.elf
 	$(OBJDUMP) -d -r $< > $(BUILD)/hal.lst
 
+# The boot floppy, from your own Windows NT 4.0 PowerPC CD:
+#
+#     make floppy ISO=/path/to/nt4-ppc.iso
+#
+# Builds the HAL and the ADB driver first, then takes the four files it cannot
+# ship -- the veneer, SETUPLDR and the Cirrus driver pair -- off the image you
+# name, patches the veneer twice, and lays out build/boot-floppy.img.
+#
+# The result CANNOT BE REDISTRIBUTED: five of its eleven files are Microsoft's
+# and three of those are modified.  See PROVENANCE.md.
+floppy: all
+	@test -n "$(ISO)" || { \
+	  echo 'make floppy needs your CD image:'; \
+	  echo '    make floppy ISO=/path/to/nt4-ppc.iso'; \
+	  exit 1; }
+	python3 $(TOOLS)/mkfloppy.py --iso "$(ISO)"
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all clean disasm
+.PHONY: all clean disasm floppy
