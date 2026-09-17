@@ -52,6 +52,7 @@ ULONG HalGetBusData(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber
 VOID HalpCudaInitialize(VOID);
 VOID HalpCudaService(VOID);
 BOOLEAN HalpCudaGetTime(PULONG Seconds);      /* seconds since 1904-01-01, from Cuda */
+BOOLEAN HalpCudaResetSystem(VOID);            /* Cuda pulls the reset line; FALSE if it did not answer */
 BOOLEAN HalpCudaSetTime(ULONG Seconds);
 ULONGLONG HalpDivU64(ULONGLONG n, ULONG d);   /* a freestanding build has no __udivdi3 */
 

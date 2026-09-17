@@ -247,6 +247,24 @@ VOID HalRequestIpi(KAFFINITY Mask)
 VOID HalReturnToFirmware(FIRMWARE_REENTRY Routine)
 {
     HalpDisableInterrupts();
-    HalpPrint("\nHAL: HalReturnToFirmware(%d) — halted\n", Routine);
+    /* NT is finished with the machine and wants it back.  Everything is already flushed by the
+     * time this is called -- text-mode Setup's "Press ENTER to restart your computer" ends here
+     * -- so the only question is whether the hardware can be made to restart.
+     *
+     * It can, through Cuda: pseudo-command $11 makes it pull the reset line.  That is the same
+     * path a Macintosh Restart and Open Firmware's `reset-all` take, and it is the only one this
+     * board offers -- there is no chipset or PCI reset register to write.  Cuda takes a few
+     * milliseconds, so the spin below is the wait for the line, not a failure.
+     *
+     * Without this the machine sat on "Restarting computer..." for ever, which reads as a hang
+     * in Setup and is not one. */
+    if (Routine == HalRebootRoutine || Routine == HalRestartRoutine) {
+        HalpPrint("\nHAL: HalReturnToFirmware(%d) -- resetting through Cuda\n", Routine);
+        if (HalpCudaResetSystem()) {
+            for (;;) { }  /* the reset line arrives here */
+        }
+        HalpPrint("HAL: Cuda did not answer -- halting instead\n");
+    }
+    HalpPrint("\nHAL: HalReturnToFirmware(%d) -- halted\n", Routine);
     for (;;) { }
 }

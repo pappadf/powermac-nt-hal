@@ -217,6 +217,12 @@ for with a run.
   With generous budgets the thirty-odd pages of the GUI wizard came to something over twenty
   hours at the ~1.25e9 instructions a minute this machine manages. Cap every wait; a wizard page
   draws in well under 1e9 cycles.
+* **NT's restart needed a HAL that could do it.**  `HalReturnToFirmware` was a stub that
+  disabled interrupts and spun, so text-mode Setup's *"Press ENTER to restart your computer"*
+  sat there for ever -- which reads as a hang in Setup and is not one.  It now sends Cuda
+  pseudo-command `$11`, RESET SYSTEM, the same path Open Firmware's `reset-all` takes; the
+  machine resets and the firmware comes back.  Nothing was ever lost to it, because Setup writes
+  everything before showing that prompt, but it cost an afternoon of reading it as a hang.
 * **A plain letter is an accelerator unless an edit control has focus.** Typing `"ANS"` on the
   Setup Options page sent `A` nowhere and `N` straight to **Next**, turning the page mid-string.
   Type only where a text field is known to have focus, and prefer strings with no `N`, `B` or

@@ -65,6 +65,7 @@
 #define CUDA_CMD_AUTOPOLL 0x01   /* pseudo-command: one byte, nonzero starts auto-polling */
 #define CUDA_CMD_GET_TIME 0x03   /* reply carries 4 bytes, MSB first: seconds since 1904 */
 #define CUDA_CMD_SET_TIME 0x09   /* takes those same 4 bytes */
+#define CUDA_CMD_RESET    0x11   /* RESET SYSTEM: Cuda pulls the machine's reset line */
 
 #define CUDA_MAX_REPLY 24
 
@@ -228,6 +229,24 @@ static ULONG HalpCudaRequest(UCHAR type, const UCHAR *in, ULONG inlen, PUCHAR re
     HalpCudaBusy = FALSE;
     HalpWriteMsr(msr);
     return n;
+}
+
+/* Cuda pseudo-command $11, RESET SYSTEM.  Cuda returns to its own power-on state and then
+ * ASSERTS THE MACHINE'S RESET LINE, which is the only way this board has of restarting itself:
+ * there is no chipset or PCI reset register the HAL can reach, and Open Firmware's `reset-all`
+ * goes the same way.  A Macintosh Restart is this command too.
+ *
+ * Cuda takes a few milliseconds to pull the line, so this returns and the caller waits.  FALSE
+ * means Cuda is not up or did not answer, so the caller can halt honestly rather than leave the
+ * machine looking like it is on its way down when it is not.
+ *
+ * Safe to call with interrupts already disabled: HalpCudaRequest is polled throughout and saves
+ * and restores the MSR around its own transfer. */
+BOOLEAN HalpCudaResetSystem(VOID)
+{
+    UCHAR cmd = CUDA_CMD_RESET;
+    UCHAR reply[CUDA_MAX_REPLY];
+    return HalpCudaRequest(CUDA_PKT_PSEUDO, &cmd, 1, reply, sizeof(reply)) != 0;
 }
 
 /* ---- delivery to the driver -------------------------------------------------------------- */
