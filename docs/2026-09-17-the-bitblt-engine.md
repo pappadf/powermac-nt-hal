@@ -161,11 +161,38 @@ was developed against.
    `IoAssignDriveLetters` puts the boot device at `D:` and the system path at `D:\WINNT`, and
    GUI Setup's wizard comes up — drawn by the engine
    ([`2026-09-17-gui-wizard-drawn-by-the-blt-engine.png`](../traces/2026-09-17-gui-wizard-drawn-by-the-blt-engine.png)).
-4. **GUI Setup stops at Registration.** The page order is Welcome → Setup Options → Name and
-   Organization → **Registration**, which wants the twenty-digit Product ID from the Certificate
-   of Authenticity and will not advance without it
-   ([`2026-09-17-gui-registration-needs-a-product-id.png`](../traces/2026-09-17-gui-registration-needs-a-product-id.png)).
-   That is a licensing gate, not a fault in anything here.
+4. **GUI Setup ran the whole way through**, once the Product ID from the machine's Certificate
+   of Authenticity was to hand: *"Windows NT 4.00 has been installed successfully"*
+   ([`2026-09-17-gui-setup-installed-successfully.png`](../traces/2026-09-17-gui-setup-installed-successfully.png)).
+   The wizard's page order, measured, is Welcome → Setup Options → Name and Organization →
+   Registration → Computer Name → Administrator Account → Emergency Repair Disk → Select
+   Components → Installing Windows NT Networking → how to participate on a network → [Network
+   Adapter search]. Along the way NT's Display Properties reported *"The system found the
+   following video adapter in your machine: cirrus compatible display adapter"* at 256 colours.
+5. **The finished installation boots.** A cold boot of the resulting disk, nothing typed beyond
+   the two firmware lines, reaches *Microsoft Windows NT Workstation 4.0 with Microsoft Internet
+   Explorer* and its "Press Ctrl + Alt + Delete to log on" dialog
+   ([`2026-09-17-installed-nt-boots-to-logon.png`](../traces/2026-09-17-installed-nt-boots-to-logon.png)),
+   with 2,124 blits and no bug check. Two screenshots six seconds of emulated time apart are
+   byte-identical, so it is settled and waiting rather than still drawing.
+
+### 5.1 Three pages that Return alone cannot take
+
+Worth writing down, because each one costs a run to rediscover and two of them present as
+something they are not.
+
+* **The Product ID's three boxes do NOT auto-advance.** Typing all seventeen digits straight
+  through leaves five in the first box and the other two empty, because each box stops at its
+  own maximum length and the rest of the string goes nowhere. Setup answers that with *"The
+  Product Id you entered is not valid"*, which reads exactly like a rejected key and is not one.
+  Tab between the boxes.
+* **The Emergency Repair Disk page defaults to "Yes, create"** and there is no floppy NT can
+  write here -- the drive it sees is the RAM disk `adbport.sys` serves. Down picks "No".
+* **The networking page defaults to "This computer will participate on a network"**, which leads
+  to an adapter search this machine has nothing to answer. The search finds nothing, `Next` stays
+  disabled, and Return lands on `Back` instead, so a Return-only sequence walks between those two
+  pages for ever. Up picks "Do not connect this computer to a network at this time", which skips
+  the branch entirely.
 
 ---
 
