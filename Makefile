@@ -96,7 +96,27 @@ floppy: all
 	  exit 1; }
 	python3 $(TOOLS)/mkfloppy.py --iso "$(ISO)"
 
+# An empty disk for NT to install onto:
+#
+#     make disk                      # -> build/nt-disk.img, 512 MB
+#     make disk DISK=my.img SIZE=800
+#
+# It holds no files -- only a partition table with an ARC system partition,
+# which Setup requires before it will start ("System partitions are created and
+# managed by a manufacturer-supplied configuration program").  On an IBM or
+# Motorola ARC machine that program is ARCINST.EXE; this machine has no ARC
+# firmware of its own, so mkarcdisk.py does that job here.
+#
+# 32 MB at LBA 4096 for the system partition, the rest for NT.  Install to the
+# SECOND one; the first exists to hold OSLOADER.EXE and HAL.DLL where the
+# firmware can read them.
+DISK ?= $(BUILD)/nt-disk.img
+SIZE ?= 512
+disk: | $(BUILD)
+	@test ! -e "$(DISK)" || { echo "$(DISK) exists -- remove it, or set DISK="; exit 1; }
+	python3 $(TOOLS)/mkarcdisk.py --size-mb $(SIZE) --part 4096:65536 --part 69632:0 "$(DISK)"
+
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all clean disasm floppy
+.PHONY: all clean disasm floppy disk

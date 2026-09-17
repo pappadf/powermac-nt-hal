@@ -157,10 +157,19 @@ copy-on-write layer.
 
 ```bash
 make floppy ISO=/path/to/your/windows-nt-4.0-ppc.iso     # -> build/boot-floppy.img
+make disk                                                # -> build/nt-disk.img
 ```
 
-That is the whole build. It compiles the HAL and the ADB driver, takes the four files it cannot
-ship off the image you named — the ARC veneer, `SETUPLDR`, and the Cirrus driver pair,
+**The disk holds no files.** It carries only a partition table with an ARC *system partition*,
+which Setup requires before it will start — its own refusal says why: *"System partitions are
+created and managed by a manufacturer-supplied configuration program."* On an IBM or Motorola ARC
+machine that program is `ARCINST.EXE`, run from the CD before Setup; this machine has no ARC
+firmware of its own, so [`tools/mkarcdisk.py`](tools/mkarcdisk.py) does that job here. Install to
+the **second** partition — the first exists to hold `OSLOADER.EXE` and `HAL.DLL` where the
+firmware can read them.
+
+The floppy build is the whole of the rest: it compiles the HAL and the ADB driver, takes the four
+files it cannot ship off the image you named — the ARC veneer, `SETUPLDR`, and the Cirrus driver pair,
 decompressing the cabinet the CD stores one of them in — patches the veneer twice, and lays out
 the floppy.
 
