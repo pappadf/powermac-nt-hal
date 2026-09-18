@@ -77,6 +77,8 @@ def chs(lba, spt, heads):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('image')
+    ap.add_argument('--size-mb', type=int, default=512,
+                    help='size to create the image at if it does not exist (default 512)')
     ap.add_argument('--spt', type=int, default=63)
     ap.add_argument('--heads', type=int, default=16)
     ap.add_argument('--part', action='append', default=[], metavar='START:SECTORS[:LABEL]',
@@ -87,6 +89,13 @@ def main():
     ap.add_argument('--label', default='ARCSYSTEM')
     a = ap.parse_args()
 
+    # Create the image if it is not there.  A disk for an install starts empty -- what it
+    # needs is a partition table, which is what this tool is for, so making the caller
+    # conjure a file of the right size first was a step with no thinking in it.
+    if not os.path.exists(a.image):
+        with open(a.image, 'wb') as f:
+            f.truncate(a.size_mb * 1024 * 1024)
+        print(f'{a.image}: created, {a.size_mb} MB')
     size = os.path.getsize(a.image)
     if size % 512:
         sys.exit('mkarcdisk: image is not a whole number of sectors')

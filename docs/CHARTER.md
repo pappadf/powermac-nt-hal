@@ -537,13 +537,17 @@ somewhere documented.
   exports too, and all four were stubs. With them implemented — and with the FAT system
   partition `ARCINST.EXE` would have created, written by `tools/mkarcdisk.py` — Setup reaches
   its partition screen and offers to install.
-- **Drive letters: the current wall.** `IoAssignDriveLetters` assigns one letter per disk
-  (`\Device\Harddisk%d\Partition1`) instead of one per recognised partition, in NT's order:
-  the first primary of each disk, then logical drives, then the remaining primaries, then the
-  CD-ROMs. Setup numbers the volumes that way itself, so the partition it installs to has no
-  symbolic link and the kernel ends up calling `_wcsicmp` on a `UNICODE_STRING`'s `Length`.
-  The fix needs `IoGetDeviceObjectPointer` to open each `\Device\Harddisk%d\Partition0` and
-  the partition table this HAL already reads.
+- **Drive letters (solved, wall 41).** One letter per disk instead of one per recognised
+  partition left the install volume with no `\DosDevices\` entry. `IoAssignDriveLetters` now
+  opens each `\Device\Harddisk%d\Partition0` with `IoGetDeviceObjectPointer` and assigns in
+  NT's order.
+- **The HAL's own identity (solved, wall 44).** The HAL no longer impersonates
+  `HALEAGLE.DLL`: `tools/mkoem.py` adds a `[Computer]`/`[Hal.Load]`/`[hal]` entry of its own,
+  so Setup offers *"Apple Network Server 500/700"* and installs `HALSHINR.DLL`. This also
+  retired the checksum failure that impersonation caused during the copy phase.
+- **The current wall is whatever the copy phase reaches.** Setup is copying Windows NT to the
+  disk; past that lie the first reboot from the installed system, which needs the ARC
+  environment Setup writes and the veneer to boot `OSLOADER` off the FAT system partition.
 - **Disk size (solved).** NT wants at least 158 MB and the first emulated disk was 8 MB. Not a
   HAL problem: a larger disk needs a new checkpoint chain, because the checkpoint is
   consolidated and its block count is fixed.

@@ -43,17 +43,11 @@ static ULONG HalpGetUlong(const volatile UCHAR *p)
     return (ULONG)p[0] | ((ULONG)p[1] << 8) | ((ULONG)p[2] << 16) | ((ULONG)p[3] << 24);
 }
 
-/* Sector numbers come back out of a byte offset, and a freestanding build has no __udivdi3;
- * shift-and-subtract long division keeps the HAL self-contained. */
+/* Sector numbers come out of a byte offset; the division is 64-bit and a freestanding build
+ * has no __udivdi3, so it goes through the HAL's own long division (misc.c). */
 static ULONG HalpDivBySector(LARGE_INTEGER Offset, ULONG SectorSize)
 {
-    ULONGLONG n = (ULONGLONG)Offset, rem = 0;
-    ULONG q = 0;
-    for (int i = 63; i >= 0; i--) {
-        rem = (rem << 1) | ((n >> i) & 1);
-        if (rem >= SectorSize) { rem -= SectorSize; if (i < 32) q |= 1u << i; }
-    }
-    return q;
+    return (ULONG)HalpDivU64((ULONGLONG)Offset, SectorSize);
 }
 
 static VOID HalpPutUlong(volatile UCHAR *p, ULONG v)
@@ -79,6 +73,31 @@ static BOOLEAN HalpExtended(UCHAR type)
 
 /* Read or write one sector through the disk driver.  IoBuildSynchronousFsdRequest wants a
  * PASSIVE_LEVEL caller in a real thread; every caller of these three exports is one. */
+static PVOID HalpDiskCaller;        /* the return address into whoever called the export; for the refusal below */
+
+/* The first boot of the installed system (16 September) died in IoCallDriver with STOP 0x35,
+ * NO_MORE_IRP_STACK_LOCATIONS, on an IRP of size 0x70 -- no stack locations at all.
+ * IoBuildSynchronousFsdRequest sizes the IRP by DeviceObject->StackSize, so somebody handed one
+ * of the three exports a device object with StackSize 0 (or something that is not a device
+ * object).  Refuse that here, and say what it was and who asked, instead of bugchecking. */
+static BOOLEAN HalpDiskObjectOk(PDEVICE_OBJECT DeviceObject)
+{
+    PULONG w = (PULONG)DeviceObject;
+    if (DeviceObject != NULL && (w[0] & 0xFFFF) == 3 /* IO_TYPE_DEVICE */ && ((PUCHAR)DeviceObject)[0x30] != 0)
+        return TRUE;
+    HalpPrint("HAL: disk I/O refused: device %x type/size %x stack %d caller %x", (ULONG)DeviceObject,
+              DeviceObject ? w[0] : 0, DeviceObject ? ((PUCHAR)DeviceObject)[0x30] : 0, (ULONG)HalpDiskCaller);
+    if (DeviceObject && (w[0] & 0xFFFF) == 3 && w[2]) {
+        PULONG drv = (PULONG)w[2];                    /* DRIVER_OBJECT: DriverName at 0x1C, Buffer at 0x20 */
+        const USHORT *name = (const USHORT *)drv[8];
+        ULONG n = (drv[7] & 0xFFFF) / 2;
+        HalpPrint(" driver ");
+        for (ULONG i = 0; i < n && i < 40 && name; i++) HalpPrint("%c", (char)name[i]);
+    }
+    HalpPrint("\n");
+    return FALSE;
+}
+
 static NTSTATUS HalpDiskIo(PDEVICE_OBJECT DeviceObject, ULONG SectorSize, ULONG Lba,
                            PVOID Buffer, BOOLEAN Write)
 {
@@ -88,6 +107,7 @@ static NTSTATUS HalpDiskIo(PDEVICE_OBJECT DeviceObject, ULONG SectorSize, ULONG 
     PIRP irp;
     NTSTATUS status;
 
+    if (!HalpDiskObjectOk(DeviceObject)) return STATUS_UNSUCCESSFUL;
     iosb.Status = STATUS_UNSUCCESSFUL; iosb.Information = 0;
     KeInitializeEvent(&event, NotificationEvent, FALSE);
     irp = IoBuildSynchronousFsdRequest(Write ? IRP_MJ_WRITE : IRP_MJ_READ, DeviceObject,
@@ -108,6 +128,7 @@ static NTSTATUS HalpDiskIo(PDEVICE_OBJECT DeviceObject, ULONG SectorSize, ULONG 
 NTSTATUS IoReadPartitionTable(PDEVICE_OBJECT DeviceObject, ULONG SectorSize,
                               BOOLEAN ReturnRecognizedPartitions, PDRIVE_LAYOUT_INFORMATION *Layout)
 {
+    HalpDiskCaller = __builtin_return_address(0);
     PUCHAR sector;
     PDRIVE_LAYOUT_INFORMATION layout;
     NTSTATUS status;
@@ -246,6 +267,7 @@ static NTSTATUS HalpFindPartition(PDEVICE_OBJECT DeviceObject, ULONG SectorSize,
 NTSTATUS IoSetPartitionInformation(PDEVICE_OBJECT DeviceObject, ULONG SectorSize,
                                    ULONG PartitionNumber, ULONG PartitionType)
 {
+    HalpDiskCaller = __builtin_return_address(0);
     PUCHAR sector;
     NTSTATUS status;
     ULONG lba = 0, slot = 0;
@@ -279,6 +301,7 @@ NTSTATUS IoSetPartitionInformation(PDEVICE_OBJECT DeviceObject, ULONG SectorSize
 NTSTATUS IoWritePartitionTable(PDEVICE_OBJECT DeviceObject, ULONG SectorSize, ULONG SectorsPerTrack,
                                ULONG NumberOfHeads, PDRIVE_LAYOUT_INFORMATION Layout)
 {
+    HalpDiskCaller = __builtin_return_address(0);
     PUCHAR sector;
     NTSTATUS status = STATUS_SUCCESS;
     ULONG groups;

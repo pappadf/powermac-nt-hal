@@ -11,8 +11,12 @@
 
 ULONG HalpInitPhase;
 volatile UCHAR *HalpIoBase;
-static ULONG HalpBuild = 28;
-static const char HalpBuildTag[] = "HALSHINR-BUILD28-MARKER";
+/* A version, not a build counter: the counter was maintained by hand, went stale immediately,
+ * and appears in every trace and screenshot.  The marker string is here so a loaded image can
+ * be found by searching memory for it. */
+#define HALSHINR_VERSION "0.1"
+static const char HalpVersion[] = HALSHINR_VERSION;
+static const char HalpBuildTag[] = "HALSHINR-" HALSHINR_VERSION "-MARKER";
 
 VOID HalInitializeProcessor(ULONG Number)
 {
@@ -23,7 +27,9 @@ VOID HalInitializeProcessor(ULONG Number)
 /* The kernel's KePhase0MapIo hands out 8 MB BAT slots, three at most; the Network Server's
  * devices span 0xF2000000..0xF5FFFFFF, so the HAL programs DBAT3 itself: 256 MB of
  * cache-inhibited, guarded space at MMIO_BASE_VIRT onto MMIO_BASE_PHYS.  DBAT0 is the kernel's
- * KSEG0; DBAT1/2 stay for KePhase0MapIo.  A BAT never faults, so device access works at any IRQL. */
+ * KSEG0; DBAT1/2 are the slots KePhase0MapIo would use, which this HAL never calls -- its
+ * addresses fall inside DBAT3's window (oemdisk.c borrows DBAT2 for a moment in phase 0).  A BAT
+ * never faults, so device access works at any IRQL. */
 /* Print the ARC configuration tree the veneer built, with the resource lists of adapters and
  * controllers: this is the contract every driver's HwFindAdapter works from. */
 static VOID HalpDumpConfigTree(PCONFIGURATION_COMPONENT_DATA node, ULONG depth)
@@ -66,6 +72,82 @@ static VOID HalpMapIo(VOID)
     HalpIoBase = (volatile UCHAR *)MMIO_BASE_VIRT;
 }
 
+/* ---- the legacy VGA aperture ----------------------------------------------------------------
+ *
+ * A PCI VGA part decodes 0xA0000..0xBFFFF on the *bus*, and `cirrus.sys` claims that range as
+ * system-physical memory.  On this board the same address is ordinary RAM, and the kernel's
+ * conflict scan works on the raw, untranslated list it builds from the loader's memory
+ * descriptors -- so the claim collides with `System Resources\Physical Memory`,
+ * `VideoPortVerifyAccessRanges` returns ERROR_INVALID_PARAMETER, no `\Device\Video0` is created,
+ * and Setup dies with "a fatal error while initializing your computer's video" (0xC0000034).
+ * That is wall 25, and it is what ledger row 6's diagnostic poke was papering over.
+ *
+ * Saying "this physical range is not usable RAM on this board" is a HAL's job, and the loader's
+ * descriptor list is where it is said.  Split the free descriptor covering the aperture and mark
+ * those 32 pages LoaderSpecialMemory, which the memory manager leaves out of the physical-memory
+ * map.  It costs 128 KB, and only if the range is free to begin with -- if the loader put
+ * something there we leave it alone, and the old symptom returns visibly.
+ *
+ * **It is never free.**  That is the result: on every run so far the aperture falls inside the
+ * loader's own image -- type 9 (LoaderSystemCode) pages 0x7b..0x1bd under SETUPLDR, type 11
+ * (LoaderBootDriver) pages 0x9f..0xdd under OSLOADER -- so this declines and says so, and
+ * ledger row 6's poke is still what gets past wall 25.  The code is kept because the answer is
+ * board- and loader-specific: a loader that lays its image out differently, or a later stage
+ * that hands us a free descriptor there, would make it fire.  The descriptor dump below is what
+ * settled it, and is worth keeping on its own.
+ */
+#define VGA_APERTURE_PAGE   0xA0            /* 0xA0000 */
+#define VGA_APERTURE_PAGES  0x20            /* 128 KB  */
+#define LoaderFree          2
+#define LoaderSpecialMemory 22
+
+static MEMORY_ALLOCATION_DESCRIPTOR HalpVgaHole, HalpVgaTail;
+
+static VOID HalpInsertAfter(PLIST_ENTRY at, PLIST_ENTRY item)
+{
+    item->Flink = at->Flink;
+    item->Blink = at;
+    at->Flink->Blink = item;
+    at->Flink = item;
+}
+
+static VOID HalpReserveVgaAperture(PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    const ULONG lo = VGA_APERTURE_PAGE, hi = VGA_APERTURE_PAGE + VGA_APERTURE_PAGES;
+    for (PLIST_ENTRY e = LoaderBlock->MemoryDescriptorListHead.Flink;
+         e != &LoaderBlock->MemoryDescriptorListHead; e = e->Flink) {
+        PMEMORY_ALLOCATION_DESCRIPTOR m = (PMEMORY_ALLOCATION_DESCRIPTOR)e;
+        ULONG mlo = m->BasePage, mhi = m->BasePage + m->PageCount;
+        if (mlo > lo || mhi < hi) continue;
+        if (m->MemoryType != LoaderFree) {
+            HalpPrint("HAL: VGA aperture sits in a type-%d descriptor, not free - left alone\n",
+                      m->MemoryType);
+            return;
+        }
+        HalpVgaHole.MemoryType = LoaderSpecialMemory;
+        HalpVgaHole.BasePage = lo;
+        HalpVgaHole.PageCount = VGA_APERTURE_PAGES;
+        if (mhi > hi) {                     /* the part above the aperture stays free */
+            HalpVgaTail.MemoryType = LoaderFree;
+            HalpVgaTail.BasePage = hi;
+            HalpVgaTail.PageCount = mhi - hi;
+        }
+        if (mlo < lo) {                     /* keep the original as the part below */
+            m->PageCount = lo - mlo;
+            HalpInsertAfter(e, &HalpVgaHole.ListEntry);
+        } else {                            /* the aperture starts the descriptor: retype it */
+            m->MemoryType = LoaderSpecialMemory;
+            m->PageCount = VGA_APERTURE_PAGES;
+        }
+        if (mhi > hi)
+            HalpInsertAfter((mlo < lo) ? &HalpVgaHole.ListEntry : e, &HalpVgaTail.ListEntry);
+        HalpPrint("HAL: VGA aperture %x..%x reserved out of free memory (was %x..%x)\n",
+                  lo, hi, mlo, mhi);
+        return;
+    }
+    HalpPrint("HAL: VGA aperture not covered by a single descriptor - left alone\n");
+}
+
 BOOLEAN HalInitSystem(ULONG Phase, PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     PKPRCB Prcb = PCR->Prcb;
@@ -79,7 +161,7 @@ BOOLEAN HalInitSystem(ULONG Phase, PLOADER_PARAMETER_BLOCK LoaderBlock)
         }
         HalpMapIo();
         HalpInitializeDisplay(LoaderBlock);
-        HalpPrint("\nHAL: halshinr build %d (%s) for the Apple Network Server (phase 0)\n", HalpBuild, HalpBuildTag);
+        HalpPrint("\nHAL: halshinr %s (%s) for the Apple Network Server (phase 0)\n", HalpVersion, HalpBuildTag);
         HalpPrint("HAL: I/O base %x, PVR %x, MSR %x, PCR %x, loader block %x\n",
                   (ULONG)HalpIoBase, HalpReadPvr(), HalpReadMsr(), (ULONG)PCR, (ULONG)LoaderBlock);
         HalpPrint("HAL: GC events %x mask %x levels %x\n", MmioRead32(GC_INT_EVENTS), MmioRead32(GC_INT_MASK), MmioRead32(GC_INT_LEVELS));
@@ -101,8 +183,13 @@ BOOLEAN HalInitSystem(ULONG Phase, PLOADER_PARAMETER_BLOCK LoaderBlock)
             ULONG n = 0, pages = 0;
             for (PLIST_ENTRY e = LoaderBlock->MemoryDescriptorListHead.Flink; e != &LoaderBlock->MemoryDescriptorListHead; e = e->Flink) {
                 PMEMORY_ALLOCATION_DESCRIPTOR m = (PMEMORY_ALLOCATION_DESCRIPTOR)e; n++; pages += m->PageCount;
+                if (m->BasePage < 0x200)        /* HalpPrint has no field widths */
+                    HalpPrint("HAL:   mem type %d pages %x..%x\n",
+                              m->MemoryType, m->BasePage, m->BasePage + m->PageCount);
             }
             HalpPrint("HAL: %d memory descriptors, %d pages; PCR irql %d, kseg0 top %x\n", n, pages, PCR->CurrentIrql, PCR->Kseg0Top);
+            HalpReserveVgaAperture(LoaderBlock);
+            HalpOemDiskInitialize(LoaderBlock);
         }
 
         HalpCurrentTimeIncrement = MAXIMUM_INCREMENT;
@@ -160,6 +247,24 @@ VOID HalRequestIpi(KAFFINITY Mask)
 VOID HalReturnToFirmware(FIRMWARE_REENTRY Routine)
 {
     HalpDisableInterrupts();
-    HalpPrint("\nHAL: HalReturnToFirmware(%d) — halted\n", Routine);
+    /* NT is finished with the machine and wants it back.  Everything is already flushed by the
+     * time this is called -- text-mode Setup's "Press ENTER to restart your computer" ends here
+     * -- so the only question is whether the hardware can be made to restart.
+     *
+     * It can, through Cuda: pseudo-command $11 makes it pull the reset line.  That is the same
+     * path a Macintosh Restart and Open Firmware's `reset-all` take, and it is the only one this
+     * board offers -- there is no chipset or PCI reset register to write.  Cuda takes a few
+     * milliseconds, so the spin below is the wait for the line, not a failure.
+     *
+     * Without this the machine sat on "Restarting computer..." for ever, which reads as a hang
+     * in Setup and is not one. */
+    if (Routine == HalRebootRoutine || Routine == HalRestartRoutine) {
+        HalpPrint("\nHAL: HalReturnToFirmware(%d) -- resetting through Cuda\n", Routine);
+        if (HalpCudaResetSystem()) {
+            for (;;) { }  /* the reset line arrives here */
+        }
+        HalpPrint("HAL: Cuda did not answer -- halting instead\n");
+    }
+    HalpPrint("\nHAL: HalReturnToFirmware(%d) -- halted\n", Routine);
     for (;;) { }
 }

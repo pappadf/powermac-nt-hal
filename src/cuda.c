@@ -63,6 +63,9 @@
 #define CUDA_PKT_ADB    0x00
 #define CUDA_PKT_PSEUDO 0x01
 #define CUDA_CMD_AUTOPOLL 0x01   /* pseudo-command: one byte, nonzero starts auto-polling */
+#define CUDA_CMD_GET_TIME 0x03   /* reply carries 4 bytes, MSB first: seconds since 1904 */
+#define CUDA_CMD_SET_TIME 0x09   /* takes those same 4 bytes */
+#define CUDA_CMD_RESET    0x11   /* RESET SYSTEM: Cuda pulls the machine's reset line */
 
 #define CUDA_MAX_REPLY 24
 
@@ -80,9 +83,21 @@ static BOOLEAN HalpCudaBusy;         /* a transaction is in progress; keeps the 
  * (maciNTosh's own HAL says the same thing by lowering to IRQL 2 before it calls the callback.)
  * So the interrupt only parks the packet in this ring and queues a DPC; the callback runs from
  * the DPC at DISPATCH_LEVEL.  One producer at device IRQL, one consumer at 2. */
-#define ADB_RING 8
+/* Eight was enough for a keystroke at a time and nothing else.  Typing is a *burst*: one
+ * `keyboard.type("Granny Smith")` puts 12 characters on the bus in about 50 ms, which Cuda
+ * auto-polls out as eighteen two-event packets — and every one of them lands on the VIA
+ * interrupt before the DPC that drains them has had a chance to run once.  The ring overflowed
+ * after seven, the rest were dropped on the floor, and NT received half a word.  Size it for a
+ * burst instead: 64 entries is 1.6 KB of BSS and covers far more than a fast typist can queue
+ * between two DPCs. */
+#define ADB_RING 64
 static struct { UCHAR Data[CUDA_MAX_REPLY]; UCHAR Length; } HalpAdbRing[ADB_RING];
-static ULONG HalpAdbRingHead, HalpAdbRingTail;
+/* Single producer (the VIA interrupt, at the device IRQL) and single consumer (the DPC, at
+ * DISPATCH_LEVEL), which on this uniprocessor machine is safe without a lock: the consumer
+ * cannot preempt the producer.  volatile because the compiler must not cache either index
+ * across the delivery call.  An MP machine — the 700 can carry two 604e cards — would need a
+ * spin lock here; nothing else in this file assumes one processor. */
+static volatile ULONG HalpAdbRingHead, HalpAdbRingTail;
 static KDPC HalpAdbDpc;
 static BOOLEAN HalpAdbDpcReady;
 
@@ -216,10 +231,30 @@ static ULONG HalpCudaRequest(UCHAR type, const UCHAR *in, ULONG inlen, PUCHAR re
     return n;
 }
 
+/* Cuda pseudo-command $11, RESET SYSTEM.  Cuda returns to its own power-on state and then
+ * ASSERTS THE MACHINE'S RESET LINE, which is the only way this board has of restarting itself:
+ * there is no chipset or PCI reset register the HAL can reach, and Open Firmware's `reset-all`
+ * goes the same way.  A Macintosh Restart is this command too.
+ *
+ * Cuda takes a few milliseconds to pull the line, so this returns and the caller waits.  FALSE
+ * means Cuda is not up or did not answer, so the caller can halt honestly rather than leave the
+ * machine looking like it is on its way down when it is not.
+ *
+ * Safe to call with interrupts already disabled: HalpCudaRequest is polled throughout and saves
+ * and restores the MSR around its own transfer. */
+BOOLEAN HalpCudaResetSystem(VOID)
+{
+    UCHAR cmd = CUDA_CMD_RESET;
+    UCHAR reply[CUDA_MAX_REPLY];
+    return HalpCudaRequest(CUDA_PKT_PSEUDO, &cmd, 1, reply, sizeof(reply)) != 0;
+}
+
 /* ---- delivery to the driver -------------------------------------------------------------- */
 
 /* maciNTosh's HAL hands the callback the reply from its flags byte on; do the same. */
 static ULONG HalpAdbTrace;
+static ULONG HalpAdbDropped;         /* packets the ring had no room for */
+static ULONG HalpAdbDelivered;       /* packets handed to the driver, for the periodic trace */
 
 static VOID HalpAdbDeliver(PUCHAR packet, ULONG length)
 {
@@ -230,6 +265,10 @@ static VOID HalpAdbDeliver(PUCHAR packet, ULONG length)
                   length > 2 ? packet[2] : 0, length > 3 ? packet[3] : 0);
     }
     if (length <= 1 || !HalpAdbCallback) return;
+    /* A count every so often, so "did delivery stop?" is answerable without rebuilding: the
+     * fixed trace window above goes quiet after twenty packets whether the bus died or not. */
+    if ((++HalpAdbDelivered % 16) == 0)
+        HalpPrint("HAL: adb delivered %d packets (%d dropped)\n", HalpAdbDelivered, HalpAdbDropped);
     HalpCallDesc4(HalpAdbCallback, packet[0], packet[1], (ULONG)(packet + 2), length - 2);
 }
 
@@ -238,18 +277,40 @@ static VOID HalpAdbDeliver(PUCHAR packet, ULONG length)
 VOID HalpCudaService(VOID)
 {
     UCHAR reply[CUDA_MAX_REPLY];
+    BOOLEAN queued = FALSE;
+
     if (!HalpCudaReady || HalpCudaBusy) return;
-    if (!HalpCudaByteReady()) return;
-    HalpCudaBusy = TRUE;
-    ULONG n = HalpCudaReadPacket(reply, sizeof(reply));
-    HalpCudaBusy = FALSE;
-    if (n < 3 || reply[0] != CUDA_PKT_ADB) return;    /* a tick or a command reply: not ours */
-    ULONG next = (HalpAdbRingTail + 1) % ADB_RING;
-    if (next == HalpAdbRingHead) return;              /* the driver is not keeping up; drop it */
-    for (ULONG i = 0; i + 1 < n && i < CUDA_MAX_REPLY; i++) HalpAdbRing[HalpAdbRingTail].Data[i] = reply[1 + i];
-    HalpAdbRing[HalpAdbRingTail].Length = (UCHAR)(n - 1);
-    HalpAdbRingTail = next;
-    if (HalpAdbDpcReady) KeInsertQueueDpc(&HalpAdbDpc, NULL, NULL);
+
+    /* **Drain, do not read one.**  HalpInterrupt clears Grand Central's latch for this source
+     * *before* calling us (ints.c), so a packet Cuda raises while we are still in here produces
+     * no second interrupt -- it is simply lost, and with it every packet after it, because the
+     * only thing that would have fetched them was that interrupt.  One keystroke at a time hid
+     * this completely: the wedge needs a second packet to arrive inside the handler's window,
+     * which is what typing does.  The symptom was a keyboard that died mid-word and never came
+     * back, and it cost three runs to stop blaming the ring above.
+     *
+     * Bounded, like every other wait in this file: a Cuda that answers forever must not be able
+     * to hold the machine at device IRQL. */
+    for (ULONG guard = 0; guard < ADB_RING && HalpCudaByteReady(); guard++) {
+        HalpCudaBusy = TRUE;
+        ULONG n = HalpCudaReadPacket(reply, sizeof(reply));
+        HalpCudaBusy = FALSE;
+        if (n < 3 || reply[0] != CUDA_PKT_ADB) continue;   /* a tick or a command reply: not ours */
+        ULONG next = (HalpAdbRingTail + 1) % ADB_RING;
+        if (next == HalpAdbRingHead) {                /* the driver is not keeping up; drop it */
+            /* Say so.  A dropped ADB packet is a keystroke the user typed and NT never saw, and
+             * in silence it looks like a stuck keyboard rather than a full queue -- which is
+             * exactly how it was read the first time. */
+            if (++HalpAdbDropped == 1 || (HalpAdbDropped % 32) == 0)
+                HalpPrint("HAL: adb ring full, dropped %d packet(s)\n", HalpAdbDropped);
+            continue;
+        }
+        for (ULONG i = 0; i + 1 < n && i < CUDA_MAX_REPLY; i++) HalpAdbRing[HalpAdbRingTail].Data[i] = reply[1 + i];
+        HalpAdbRing[HalpAdbRingTail].Length = (UCHAR)(n - 1);
+        HalpAdbRingTail = next;
+        queued = TRUE;
+    }
+    if (queued && HalpAdbDpcReady) KeInsertQueueDpc(&HalpAdbDpc, NULL, NULL);
 }
 
 /* DISPATCH_LEVEL: hand the parked packets to the driver. */
@@ -264,6 +325,44 @@ static VOID HalpAdbDpcRoutine(PKDPC Dpc, PVOID Context, PVOID Arg1, PVOID Arg2)
     }
 }
 DEFINE_DESC(HalpAdbDpcRoutine);
+
+/* ---- the real-time clock ---------------------------------------------------------------------
+ * Cuda keeps the clock, as a 32-bit count of seconds since 1904-01-01 00:00 — the classic Mac
+ * epoch, delivered most significant byte first.  It runs out in 2040.
+ */
+BOOLEAN HalpCudaGetTime(PULONG Seconds)
+{
+    UCHAR cmd = CUDA_CMD_GET_TIME, reply[CUDA_MAX_REPLY];
+    ULONG n = HalpCudaRequest(CUDA_PKT_PSEUDO, &cmd, 1, reply, sizeof(reply));
+
+    /* [0] packet type, [1] flags, [2] the command echoed back, then the four bytes */
+    if (n < 7 || reply[2] != CUDA_CMD_GET_TIME) {
+        HalpPrint("HAL: cuda get-time failed (n %d)\n", n);
+        return FALSE;
+    }
+    /* volatile, and for the same reason as HalpGetUlong in disk.c — except that this is the
+     * big-endian twin of that trap.  Assembling a big-endian ULONG out of four byte loads is an
+     * idiom clang folds into one `lwbrx`, which faults here because reply[3] sits at 2 mod 4 on
+     * the stack.  The Makefile's -combiner-store-merging=false does not cover it: that is a
+     * store combine, and this is a load. */
+    volatile const UCHAR *p = reply;
+    *Seconds = ((ULONG)p[3] << 24) | ((ULONG)p[4] << 16) |
+               ((ULONG)p[5] << 8) | (ULONG)p[6];
+    return TRUE;
+}
+
+BOOLEAN HalpCudaSetTime(ULONG Seconds)
+{
+    UCHAR out[5], reply[CUDA_MAX_REPLY];
+    ULONG n;
+
+    volatile UCHAR *p = out;                /* the store-side twin: `stwbrx` at out[1] */
+    p[0] = CUDA_CMD_SET_TIME;
+    p[1] = (UCHAR)(Seconds >> 24); p[2] = (UCHAR)(Seconds >> 16);
+    p[3] = (UCHAR)(Seconds >> 8);  p[4] = (UCHAR)Seconds;
+    n = HalpCudaRequest(CUDA_PKT_PSEUDO, out, sizeof(out), reply, sizeof(reply));
+    return (BOOLEAN)(n >= 3 && reply[2] == CUDA_CMD_SET_TIME);
+}
 
 /* ---- setup --------------------------------------------------------------------------------- */
 

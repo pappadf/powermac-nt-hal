@@ -28,6 +28,7 @@ HalInitSystem
 HalInitializeProcessor
 HalMakeBeep
 HalProcessorIdle
+HalAnsOemDiskQuery
 HalPxiAdbAutopoll
 HalPxiAdbSetCallback
 HalPxiCommandAdb

@@ -23,11 +23,16 @@ their own, so booting NT on one needs
 [`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit)'s loader as well as a HAL.
 The door is deliberately left open; the claim is only about the ANS.
 
-**Two names.** The repository is `powermac-nt-hal`; the file it builds for the Network Server is
-`HALSHINR.DLL`, after Apple's codename for that logic board ("Shiner") squeezed into the 8.3
-filename NT's loader expects — the same convention as Microsoft's own `HALEAGLE.DLL` and
-maciNTosh's `halgoss.dll`. The HAL calls itself `halshinr` in its boot banner and build tag for
-that reason. A sibling for desktop TNT machines would be a second HAL from the same sources.
+**Three names, and it is worth being precise.** The repository is `powermac-nt-hal`. The build
+produces `build/hal.dll`, whose *internal* PE export name is `HAL.dll` — that one is not a
+choice, because `NTKRNLMP.EXE` imports from the literal string `HAL.dll`. On the CD and on the
+installed system it is **`HALSHINR.DLL`**, after Apple's codename for this logic board ("Shiner")
+in the 8.3 form NT's loader expects, the same convention as Microsoft's own `HALEAGLE.DLL` and
+maciNTosh's `halgoss.dll`; the HAL calls itself `halshinr` in its boot banner for that reason.
+[`tools/mkoem.py`](tools/mkoem.py) is what puts that name on the CD, together with a computer
+type of its own — Setup's hardware menu offers *"Apple Network Server 500/700"*, and installs
+`HALSHINR.DLL` as the system's `hal.dll`. A sibling for desktop TNT machines would be a second
+HAL built from the same sources.
 
 Windows NT 4.0 Setup, running on an emulated Network Server 500, reading a partition table
 through this HAL:
@@ -54,8 +59,10 @@ where it stops:
 | Storage | both Symbios 53C825A controllers found, the CD is the boot device, `disk.sys` and `fastfat` mount volumes |
 | Keyboard | the ADB keyboard works — Cuda transport in the HAL, real keystrokes into Setup |
 | Video | `cirrus.sys` initialises the 54M30 |
-| Setup | Welcome → mass storage → licence → hardware confirmation → partition list → create and format → `\WINNT` → *"Creating directory \WINNT…"* |
-| The next wall | `IoAssignDriveLetters` assigns a letter to only the *first* partition of each disk, so the volume Setup installs to has no `\DosDevices\` entry — Setup calls it `D:`, which we gave to the CD, and `setupdd.sys` then reads a `UNICODE_STRING`'s `Length` where it wanted its `Buffer`. Cause identified, fix not yet written; see the charter, §7 |
+| Clock | the real time, read from Cuda, so installed files are dated correctly |
+| Its own identity | Setup's hardware menu offers **"Apple Network Server 500/700"** and installs `HALSHINR.DLL` as the system's `hal.dll` — a `TXTSETUP.SIF` entry of our own, not another machine's HAL borrowed ([`tools/mkoem.py`](tools/mkoem.py)) |
+| Setup | Welcome → mass storage → licence → hardware confirmation → partition list → format → `\WINNT` → copying → **"This portion of Setup has completed successfully"**, with no bugcheck in the run |
+| The next wall | the restart. Setup wrote the installed system's boot configuration through `HalSetEnvironmentVariable`, but that store is in RAM — this machine has no ARC NVRAM — so a reboot loses the `OSLOADER` path the firmware would need |
 
 Screenshots of every screen are in [`traces/`](traces/).
 
@@ -99,7 +106,7 @@ file.
 ## The story
 
 The interesting document in this repository is **[`STORY.md`](STORY.md)** — every wall hit on
-the way here, what each one turned out to be, and what it cost. Forty of them so far,
+the way here, what each one turned out to be, and what it cost. Forty-four of them so far,
 including a few that are worth reading whatever you work on:
 
 - **The interrupt that never arrived** was not an interrupt problem: `HalAllocateAdapterChannel`
@@ -133,7 +140,7 @@ transport, and a text console on the Cirrus 54M30.
 ## Building
 
 ```bash
-make          # -> build/hal.dll
+make                                       # -> build/hal.dll, build/adbport.sys
 ```
 
 Needs `clang-18`, `lld-18` and `python3`; any recent LLVM works. The build is reproducible —
@@ -142,7 +149,58 @@ if you want a real one). There is no Microsoft tool, header or import library in
 [`tools/elf2pe.py`](tools/elf2pe.py) turns lld's ELF output into an NT PowerPC PE with function
 descriptors, a pre-filled import table and base relocations, the way NT's boot loader needs it.
 
-## Testing it
+## Installing NT: bring your own CD, get a boot floppy
+
+Everything this project adds travels on **one 1.44 MB floppy image** that Setup reads as an
+ordinary manufacturer-supplied support disk. Your CD is never written to — not even in a
+copy-on-write layer.
+
+```bash
+make floppy ISO=/path/to/your/windows-nt-4.0-ppc.iso     # -> build/boot-floppy.img
+make disk                                                # -> build/nt-disk.img
+```
+
+**The disk holds no files.** It carries only a partition table with an ARC *system partition*,
+which Setup requires before it will start — its own refusal says why: *"System partitions are
+created and managed by a manufacturer-supplied configuration program."* On an IBM or Motorola ARC
+machine that program is `ARCINST.EXE`, run from the CD before Setup; this machine has no ARC
+firmware of its own, so [`tools/mkarcdisk.py`](tools/mkarcdisk.py) does that job here. Install to
+the **second** partition — the first exists to hold `OSLOADER.EXE` and `HAL.DLL` where the
+firmware can read them.
+
+The floppy build is the whole of the rest: it compiles the HAL and the ADB driver, takes the four
+files it cannot ship off the image you named — the ARC veneer, `SETUPLDR`, and the Cirrus driver pair,
+decompressing the cabinet the CD stores one of them in — patches the veneer twice, and lays out
+the floppy.
+
+Then, with the emulator (below), at the Open Firmware `0 >` prompt:
+
+```forth
+load fd:,\setup.of         \ once per machine; it resets at the end
+load-base loadsize eval
+
+load fd:,\boot.of          \ every boot, to install from the CD
+load-base loadsize eval
+```
+
+and `\bootdisk.of` in place of `\boot.of` to start what you installed. The machine wants
+**64 MB** of RAM — not the 32 MB default — with the CD at SCSI id 0 on the first fast/wide
+controller and the disk at id 0 on the second.
+
+**The [wiki](https://github.com/pappadf/powermac-nt-hal/wiki) has the screen-by-screen
+walkthrough**, including the two steps that are easy to miss and expensive to get wrong: pressing
+`S` at the mass-storage screen to add the ADB driver (without it Setup dies with *"Setup did not
+find a keyboard"* several screens later), and leaving the file system as FAT.
+
+> ### The floppy image cannot be redistributed
+>
+> Five of its eleven files are Microsoft's, off your CD, and three of those are modified. Nothing
+> of theirs is stored in this repository — every one is read from the image you name on the
+> command line, which is why `make floppy` needs one. The two files that *are* ours,
+> `HALSHINR.DLL` and `ADBPORT.SYS`, are GPL-2.0-only and may be distributed with their source.
+> See [`PROVENANCE.md`](PROVENANCE.md).
+
+## The emulator
 
 Development is against the [Granny Smith](https://github.com/pappadf/granny-smith) emulator,
 which has the breakpoints, device logpoints and checkpoints that make this tractable.
@@ -150,22 +208,13 @@ which has the breakpoints, device logpoints and checkpoints that make this tract
 > **The emulator support this needs is not in Granny Smith's mainline yet.** It is
 > [PR #135](https://github.com/pappadf/granny-smith/pull/135), branch
 > `ppc-le-mode-and-bandit-lane-reversal` — PowerPC little-endian mode, Bandit byte-lane
-> reversal, and the Cirrus 54M30 identification registers. Build `main` and the firmware's
-> little-endian reboot fails, long before anything mentions NT.
+> reversal, the Cirrus 54M30 identification registers and its BitBLT engine. Build `main` and
+> the firmware's little-endian reboot fails, long before anything mentions NT.
 > **[`docs/EMULATOR.md`](docs/EMULATOR.md) is the step-by-step setup** — which branch, how to
 > check you actually have it, how to build it, and what you must supply yourself (ROM, NT CD,
 > disk images).
 
-Once that is in place: build, write `hal.dll` over `HALEAGLE.DLL` on a *copy* of the CD, restore
-a checkpoint at Setup's computer-type menu, and drive it:
-
-```bash
-python3 tools/run-hal.py --ckpt <menu.ckpt> --iso <copy-of-cd.iso> --out run.log \
-        --delta-patch build/hal.dll --screenshot shot.png
-```
-
-[`docs/EMULATOR.md`](docs/EMULATOR.md) is the setup walkthrough,
-[`tools/README.md`](tools/README.md) documents every option, and
+[`tools/README.md`](tools/README.md) documents every option of every tool, and
 [`docs/CHARTER.md`](docs/CHARTER.md) §3.1 has the firmware sequence and the gotchas.
 
 ## Borrowed parts, and one you should know about

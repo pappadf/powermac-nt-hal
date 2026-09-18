@@ -24,7 +24,7 @@ SRCS_S = $(wildcard src/*.S)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS_C)) $(patsubst src/%.S,$(BUILD)/%.o,$(SRCS_S)) \
        $(BUILD)/imports.o $(BUILD)/exports.o
 
-all: $(BUILD)/hal.dll
+all: $(BUILD)/hal.dll $(BUILD)/adbport.sys
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -47,10 +47,76 @@ $(BUILD)/hal.elf: $(OBJS) hal.ld
 $(BUILD)/hal.dll: $(BUILD)/hal.elf hal.exports $(TOOLS)/elf2pe.py
 	python3 $(TOOLS)/elf2pe.py $< $@ --exports hal.exports --dllname HAL.dll
 
+# ---- adbport.sys: the ADB keyboard/mouse port driver and OEM-disk ramdisk (drivers/adbport) ----
+# The same toolchain and the same thunks as the HAL; a second .imports file with two DLL groups.
+ADB      = drivers/adbport
+ADB_SRCS = $(wildcard $(ADB)/*.c)
+ADB_OBJS = $(patsubst $(ADB)/%.c,$(BUILD)/adbport/%.o,$(ADB_SRCS)) \
+           $(BUILD)/adbport/thunk.o $(BUILD)/adbport/imports.o $(BUILD)/adbport/exports.o
+
+$(BUILD)/adbport:
+	mkdir -p $(BUILD)/adbport
+
+$(BUILD)/adbport/imports.S $(BUILD)/adbport/exports.S: $(ADB)/adbport.imports $(ADB)/adbport.exports $(TOOLS)/mkstubs.py | $(BUILD)/adbport
+	python3 $(TOOLS)/mkstubs.py $(ADB)/adbport.imports $(ADB)/adbport.exports $(BUILD)/adbport/imports.S $(BUILD)/adbport/exports.S
+
+$(BUILD)/adbport/%.o: $(ADB)/%.c $(ADB)/adbport.h include/*.h | $(BUILD)/adbport
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/adbport/%.o: $(ADB)/%.S | $(BUILD)/adbport
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/adbport/%.o: $(BUILD)/adbport/%.S | $(BUILD)/adbport
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/adbport.elf: $(ADB_OBJS) $(ADB)/adbport.ld
+	$(LLD) -T $(ADB)/adbport.ld --emit-relocs -nostdlib -static -o $@ $(ADB_OBJS)
+
+$(BUILD)/adbport.sys: $(BUILD)/adbport.elf $(ADB)/adbport.exports $(TOOLS)/elf2pe.py
+	python3 $(TOOLS)/elf2pe.py $< $@ --exports $(ADB)/adbport.exports --dllname adbport.sys \
+	        --entry desc_DriverEntry --import-dll ntoskrnl.exe --import-dll HAL.dll
+
 disasm: $(BUILD)/hal.elf
 	$(OBJDUMP) -d -r $< > $(BUILD)/hal.lst
+
+# The boot floppy, from your own Windows NT 4.0 PowerPC CD:
+#
+#     make floppy ISO=/path/to/nt4-ppc.iso
+#
+# Builds the HAL and the ADB driver first, then takes the four files it cannot
+# ship -- the veneer, SETUPLDR and the Cirrus driver pair -- off the image you
+# name, patches the veneer twice, and lays out build/boot-floppy.img.
+#
+# The result CANNOT BE REDISTRIBUTED: five of its eleven files are Microsoft's
+# and three of those are modified.  See PROVENANCE.md.
+floppy: all
+	@test -n "$(ISO)" || { \
+	  echo 'make floppy needs your CD image:'; \
+	  echo '    make floppy ISO=/path/to/nt4-ppc.iso'; \
+	  exit 1; }
+	python3 $(TOOLS)/mkfloppy.py --iso "$(ISO)"
+
+# An empty disk for NT to install onto:
+#
+#     make disk                      # -> build/nt-disk.img, 512 MB
+#     make disk DISK=my.img SIZE=800
+#
+# It holds no files -- only a partition table with an ARC system partition,
+# which Setup requires before it will start ("System partitions are created and
+# managed by a manufacturer-supplied configuration program").  On an IBM or
+# Motorola ARC machine that program is ARCINST.EXE; this machine has no ARC
+# firmware of its own, so mkarcdisk.py does that job here.
+#
+# 32 MB at LBA 4096 for the system partition, the rest for NT.  Install to the
+# SECOND one; the first exists to hold OSLOADER.EXE and HAL.DLL where the
+# firmware can read them.
+DISK ?= $(BUILD)/nt-disk.img
+SIZE ?= 512
+disk: | $(BUILD)
+	@test ! -e "$(DISK)" || { echo "$(DISK) exists -- remove it, or set DISK="; exit 1; }
+	python3 $(TOOLS)/mkarcdisk.py --size-mb $(SIZE) --part 4096:65536 --part 69632:0 "$(DISK)"
 
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all clean disasm
+.PHONY: all clean disasm floppy disk

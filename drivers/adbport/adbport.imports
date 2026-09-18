@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 powermac-nt-hal contributors
+# What adbport.sys imports.  Two groups, two DLLs, in the order elf2pe is given them.  The
+# kernel-side names are the ones the shipped NT 4.0 PowerPC kernel exports, and the split
+# between kernel and HAL follows what a working driver on this platform imports from where:
+# KeAcquireSpinLock is the kernel's, KeRaiseIrql is the HAL's.
+[ntoskrnl.exe]
+IoCreateDevice
+IoCreateSymbolicLink
+IoDeleteDevice
+IofCompleteRequest
+IoGetConfigurationInformation
+KeAcquireSpinLock
+KeInitializeSpinLock
+KeReleaseSpinLock
+MmMapIoSpace
+MmMapLockedPages
+RtlInitUnicodeString
+RtlMoveMemory
+RtlWriteRegistryValue
+RtlZeroMemory
+[HAL.dll]
+HalAnsOemDiskQuery
+HalDisplayString
+HalPxiAdbAutopoll
+HalPxiAdbSetCallback
+HalPxiCommandAdb
+KeLowerIrql
+KeRaiseIrql
+KeStallExecutionProcessor

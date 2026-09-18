@@ -20,6 +20,8 @@ VOID HalpPrint(const char *fmt, ...);
 VOID HalpSeedEnvironment(PVOID ArcDiskInformation);
 VOID HalpPutChar(UCHAR c);
 BOOLEAN HalpInitializeDisplay(PLOADER_PARAMETER_BLOCK LoaderBlock);
+VOID HalpOemDiskInitialize(PLOADER_PARAMETER_BLOCK LoaderBlock);   /* src/oemdisk.c, phase 0 */
+BOOLEAN HalAnsOemDiskQuery(PULONG PhysicalBase, PULONG Bytes);      /* exported for drivers/adbport */
 VOID HalpInitializeInterrupts(VOID);
 VOID HalpSetGcMask(ULONG mask);
 ULONG HalpReadTimebaseLow(VOID);
@@ -49,6 +51,16 @@ ULONG HalGetBusData(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber
  * driver written to maciNTosh's contract imports from the HAL. */
 VOID HalpCudaInitialize(VOID);
 VOID HalpCudaService(VOID);
+BOOLEAN HalpCudaGetTime(PULONG Seconds);      /* seconds since 1904-01-01, from Cuda */
+BOOLEAN HalpCudaResetSystem(VOID);            /* Cuda pulls the reset line; FALSE if it did not answer */
+BOOLEAN HalpCudaSetTime(ULONG Seconds);
+ULONGLONG HalpDivU64(ULONGLONG n, ULONG d);   /* a freestanding build has no __udivdi3 */
+
+/* The HAL's own partition-table export (source/disk.c); IoAssignDriveLetters uses it to
+ * enumerate each disk rather than assuming one partition per disk. */
+NTSTATUS IoReadPartitionTable(PDEVICE_OBJECT DeviceObject, ULONG SectorSize,
+                              BOOLEAN ReturnRecognizedPartitions,
+                              PDRIVE_LAYOUT_INFORMATION *Layout);
 VOID HalPxiAdbSetCallback(PVOID Callback);
 VOID HalPxiAdbAutopoll(USHORT Mask);
 BOOLEAN HalPxiCommandAdb(UCHAR Command, PUCHAR Data, UCHAR Length, BOOLEAN Poll);
@@ -56,6 +68,7 @@ BOOLEAN HalPxiCommandAdb(UCHAR Command, PUCHAR Data, UCHAR Length, BOOLEAN Poll)
 /* Cirrus 54M30 framebuffer console (source/vga.c) */
 extern BOOLEAN HalpFbActive;
 extern ULONG HalpFbCols, HalpFbRows, HalpFbCol, HalpFbRow;
+ULONG HalpVgaVramPhys(VOID);
 BOOLEAN HalpFbInit(PLOADER_PARAMETER_BLOCK LoaderBlock);
 VOID HalpFbPutChar(UCHAR ch);
 ULONG HalGetBusData(BUS_DATA_TYPE, ULONG, ULONG, PVOID, ULONG);
