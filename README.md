@@ -3,6 +3,14 @@
 [![build](https://github.com/pappadf/powermac-nt-hal/actions/workflows/build.yml/badge.svg)](https://github.com/pappadf/powermac-nt-hal/actions/workflows/build.yml)
 [![licence: GPL-2.0-only](https://img.shields.io/badge/licence-GPL--2.0--only-blue.svg)](LICENSE)
 
+> [!CAUTION]
+> **Experimental. Do not run this on a real Mac you care about.**
+> Booting it writes `little-endian? true` to Open Firmware's NVRAM, which Apple never supported.
+> Changing this setting has been [reported](https://discussions.apple.com/thread/1085726) to
+> leave machines needing an NVRAM reset, and at least one could not be recovered. This project
+> has only been tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator,
+> and it comes with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
+
 *This exists because of [`entii-for-workcubes`](https://github.com/Wack0/entii-for-workcubes) and
 [`maciNTosh`](https://github.com/Wack0/maciNTosh) by **Wack0 (Rairii)**, and
 [`maciNTosh-bandit`](https://github.com/MCJack123/maciNTosh-bandit) by **MCJack123**. Reading
