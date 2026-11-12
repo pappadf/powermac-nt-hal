@@ -158,20 +158,22 @@ ULONG HalGetDmaAlignmentRequirement(VOID)
     return 1;
 }
 
-/* Flush pages an I/O read brought in, so the instruction cache never sees stale code.
+/* Make code an I/O read brought in visible to the instruction cache.
  *
- * Sweeping the data cache around every DMA was tried too, on the theory that a dirty line could
- * reach the disk stale (STORY.md wall 50).  It changed nothing: Bandit is coherent with the
- * 604, as the file header says, and the corruption had another cause entirely. */
+ * Bandit is coherent with the 604's data cache (the file header), so a DMA read leaves nothing
+ * stale there; sweeping the data cache around every DMA was tried, on the theory that a dirty
+ * line could reach the disk stale (STORY.md wall 50), and changed nothing.  The instruction
+ * cache is not snooped, so a page read in for execution may still be shadowed by old lines.
+ *
+ * One flash-invalidate of the whole instruction cache (HID0[ICFI]) covers every page of the MDL.
+ * The earlier per-page dcbf/icbi sweep reached each page through KSEG0, which DBAT0 maps for its
+ * first 8 MB only (PCR->Kseg0Top): with more memory, a page above it took a DSI and the kernel
+ * stopped with KMODE_EXCEPTION_NOT_HANDLED (0x1E) during the file copy.  Found by cat7, on QEMU
+ * with 64 MB.  The flash-invalidate is local to this processor, where icbi is broadcast; the
+ * HAL runs one. */
 VOID HalFlushIoBuffers(PMDL Mdl, BOOLEAN ReadOperation, BOOLEAN DmaOperation)
 {
     UNREFERENCED_PARAMETER(DmaOperation);
     if (!ReadOperation || !(Mdl->MdlFlags & MDL_IO_PAGE_READ)) return;
-    PULONG pages = (PULONG)(Mdl + 1);
-    ULONG npages = (Mdl->ByteOffset + Mdl->ByteCount + 4095) >> 12;
-    for (ULONG i = 0; i < npages; i++) {
-        PVOID va = (PVOID)(0x80000000u + (pages[i] << 12));   /* KSEG0 */
-        HalSweepDcacheRange(va, 4096);
-        HalSweepIcacheRange(va, 4096);
-    }
+    HalSweepIcache();
 }

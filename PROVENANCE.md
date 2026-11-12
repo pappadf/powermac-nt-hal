@@ -58,3 +58,4 @@ is measured rather than asserted.
   source or a written offer (GPL-2.0 §3). Reading them to learn an interface is what the rows
   above record; shipping one, or a patched one, is not something this project may do.
 - Apple, Symbios/LSI and Motorola documents: facts and citations only.
+| `src/dma.c` (`HalFlushIoBuffers`: no per-page sweep through KSEG0 above its 8 MB), `src/vga.c` (`SR15` set to the 1 MB memory-size code), `include/hal.h` (`HalSweepIcache` declared) | cat7/nt-boot-floppy, a fork of this repository, commits `cfa37b1` (dma) and `546dfb5` (vga) | GPL-2.0-only (this project's own licence) | **adapted**: the diagnosis and both fixes are cat7's; the dma change is rewritten (one flash-invalidate in place of the per-page loop), the vga line is cat7's with a new comment | 2026-11-12 | pappadf using Claude, from cat7's commits |

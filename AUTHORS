@@ -8,6 +8,7 @@ the human-readable index of it.  Add yourself in the same commit as your first
 contribution.
 
     pappadf <https://github.com/pappadf>            2026-       author, maintainer
+    cat7 <https://github.com/cat7>                  2026-       the I/O-buffer flush above 8 MB and SR15 fixes
 
 Work in this repository has been done with the assistance of Anthropic's Claude,
 directed and reviewed by the contributor credited above; PROVENANCE.md records it

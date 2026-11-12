@@ -45,6 +45,7 @@ BOOLEAN HalpDecrementerInterrupt(PKINTERRUPT Interrupt, PVOID ServiceContext, PV
 BOOLEAN HalpExternalInterrupt(PKINTERRUPT Interrupt, PVOID ServiceContext, PVOID TrapFrame);
 VOID HalSweepDcacheRange(PVOID Address, ULONG Length);
 VOID HalSweepIcacheRange(PVOID Address, ULONG Length);
+VOID HalSweepIcache(VOID);
 ULONG HalGetBusData(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber, PVOID Buffer, ULONG Length);
 
 /* Cuda and ADB (source/cuda.c): the transport, and the three entry points a keyboard port
