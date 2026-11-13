@@ -4,12 +4,18 @@
 [![licence: GPL-2.0-only](https://img.shields.io/badge/licence-GPL--2.0--only-blue.svg)](LICENSE)
 
 > [!CAUTION]
-> **Experimental. Do not run this on a real Mac you care about.**
-> Booting it writes `little-endian? true` to Open Firmware's NVRAM, which Apple never supported.
-> Changing this setting has been [reported](https://discussions.apple.com/thread/1085726) to
-> leave machines needing an NVRAM reset, and at least one could not be recovered. This project
-> has only been tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator,
-> and it comes with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
+> **Experimental. Do not run this on a real Mac you care about.** This project has only been
+> tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator, and it comes
+> with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
+>
+> Booting it **changes no NVRAM setting.** Earlier versions stored `little-endian? true` in Open
+> Firmware's NVRAM, which Apple never supported and which has been
+> [reported](https://discussions.apple.com/thread/1085726) to leave machines needing an NVRAM
+> reset (at least one could not be recovered). The floppy now leaves the firmware in its factory
+> big-endian mode and switches the processor and the PCI bridges to little-endian itself, until
+> the next reset, the way [maciNTosh](https://github.com/Wack0/maciNTosh)'s loader does on later
+> Macs. If an earlier floppy's `setup.of` was ever run on a machine, run `restore.of` on it once
+> (below) to put the factory values back.
 
 *This exists because of [`entii-for-workcubes`](https://github.com/Wack0/entii-for-workcubes) and
 [`maciNTosh`](https://github.com/Wack0/maciNTosh) by **Wack0 (Rairii)**, and
@@ -48,7 +54,7 @@ Three ingredients, none of which can ship here: a **Network Server ROM** (the pr
 them: build it, or take it from a release.
 
 ```bash
-make                                       # -> build/hal.dll, build/adbport.sys, build/arcfw.xcf (and arcfw.exe)
+make                                       # -> build/hal.dll, build/adbport.sys, build/arcfw.xcf
 make floppy                                # -> build/boot-floppy.img
 make disk                                  # -> build/nt-disk.img
 ```
@@ -57,13 +63,18 @@ Then, on an emulated Network Server 500 with 64 MB, the CD at SCSI id 0 on the f
 the disk at id 0 on the second and the floppy in the drive, at the Open Firmware `0 >` prompt:
 
 ```forth
-load fd:,\setup.of         \ once per machine; it resets at the end
-load-base loadsize eval
-
 load fd:,\boot.of          \ to install from the CD
 load-base loadsize eval
 
 load fd:,\bootdisk.of      \ to start what you installed
+load-base loadsize eval
+```
+
+Nothing to configure first: the firmware stays as it left the factory. Only on a machine where an
+earlier version's `setup.of` was run, once, to restore the factory NVRAM values:
+
+```forth
+load fd:,\restore.of       \ it resets at the end
 load-base loadsize eval
 ```
 

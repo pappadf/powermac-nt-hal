@@ -55,17 +55,16 @@ jobs:
       - name: Check what came out
         run: |
           set -e
-          for f in build/hal.dll build/adbport.sys build/arcfw.exe build/arcfw.xcf build/boot-floppy.img; do test -f "$f"; done
+          for f in build/hal.dll build/adbport.sys build/arcfw.xcf build/boot-floppy.img; do test -f "$f"; done
           python3 tools/pe-exports.py build/hal.dll | grep -q '01f0\|0x1f0'
           python3 tools/pe-exports.py build/adbport.sys | grep -q '01f0\|0x1f0'
-          # arcfw.exe is a raw COFF: machine 0x01F0 in its first two bytes
-          test "$(head -c 2 build/arcfw.exe | od -An -tx1 | tr -d ' ')" = f001
-          test "$(head -c 2 build/arcfw.xcf | od -An -tx1 | tr -d ' ')" = df01
+          # arcfw.xcf: an XCOFF with big-endian headers (f_magic 0x01DF)
+          test "$(head -c 2 build/arcfw.xcf | od -An -tx1 | tr -d ' ')" = 01df
           # the floppy must carry nothing of Microsoft's: no such 8.3 directory entry on it
           for e in 'VENEER  EXE' 'VENEERD EXE' 'SETUPLDR   ' 'CIRRUS  SYS' 'CIRRUS  DLL' 'I8042PRTSYS'; do
             ! grep -aq "$e" build/boot-floppy.img || { echo "$e is on the floppy"; exit 1; }
           done
-          for e in 'ARCFW   XCF' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'SETUP   OF '; do
+          for e in 'ARCFW   XCF' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'RESTORE OF '; do
             grep -aq "$e" build/boot-floppy.img || { echo "$e is missing from the floppy"; exit 1; }
           done
 
@@ -76,8 +75,8 @@ jobs:
           mkdir -p dist
           cp build/boot-floppy.img "dist/powermac-nt-hal-$v-boot-floppy.img"
           mkdir -p "dist/parts"
-          cp build/hal.dll build/adbport.sys build/arcfw.exe build/arcfw.xcf dist/parts/
-          (cd dist/parts && zip -q "../powermac-nt-hal-$v-parts.zip" hal.dll adbport.sys arcfw.xcf arcfw.exe)
+          cp build/hal.dll build/adbport.sys build/arcfw.xcf dist/parts/
+          (cd dist/parts && zip -q "../powermac-nt-hal-$v-parts.zip" hal.dll adbport.sys arcfw.xcf)
           rm -r dist/parts
           cp LICENSE NOTICE dist/
           (cd dist && sha256sum * > SHA256SUMS)
@@ -109,7 +108,7 @@ jobs:
             echo "Nothing on it is Microsoft's: the ARC firmware, the HAL and the ADB driver are this project's (GPL-2.0-only)."
             echo
             echo "- \`powermac-nt-hal-$v-boot-floppy.img\`: the 1.44 MB floppy. Write it, or attach it to the emulator."
-            echo "- \`powermac-nt-hal-$v-parts.zip\`: \`hal.dll\`, \`adbport.sys\`, \`arcfw.xcf\` (the firmware the floppy carries) and \`arcfw.exe\` on their own."
+            echo "- \`powermac-nt-hal-$v-parts.zip\`: \`hal.dll\`, \`adbport.sys\` and \`arcfw.xcf\` (the firmware the floppy carries) on their own."
             echo "- \`SHA256SUMS\`"
             echo
             echo "You still need a Network Server ROM (the production 1.1.22 or the 2.26NT one; both work) and your own Windows NT 4.0 Workstation for PowerPC CD."

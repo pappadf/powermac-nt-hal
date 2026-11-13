@@ -5,6 +5,7 @@
 CLANG ?= clang-18
 LLD   ?= ld.lld-18
 OBJDUMP ?= llvm-objdump-18
+OBJCOPY ?= llvm-objcopy-18
 TOOLS  = tools
 TARGET = --target=powerpcle-unknown-linux-gnu -mcpu=604
 # -combiner-store-merging=false: the 604 runs little-endian here, where a misaligned access
@@ -24,7 +25,7 @@ SRCS_S = $(wildcard src/*.S)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS_C)) $(patsubst src/%.S,$(BUILD)/%.o,$(SRCS_S)) \
        $(BUILD)/imports.o $(BUILD)/exports.o
 
-all: $(BUILD)/hal.dll $(BUILD)/adbport.sys $(BUILD)/arcfw.exe $(BUILD)/arcfw.xcf
+all: $(BUILD)/hal.dll $(BUILD)/adbport.sys $(BUILD)/arcfw.xcf
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -79,9 +80,11 @@ $(BUILD)/adbport.sys: $(BUILD)/adbport.elf $(ADB)/adbport.exports $(TOOLS)/elf2p
 disasm: $(BUILD)/hal.elf
 	$(OBJDUMP) -d -r $< > $(BUILD)/hal.lst
 
-# ---- arcfw.exe: the ARC firmware shim that stands in for Microsoft's VENEER.EXE (src/arcfw) ----
-# A raw COFF at 0x50000, as the veneer is, so pe-loader's init-program and `go` take it; no
-# imports, no exports, no TOC: plain clang code at a fixed address.
+# ---- arcfw.xcf: the ARC firmware (src/arcfw) inside its big-endian front end (src/stage0) ----
+# The firmware is little-endian plain clang code at a fixed address, 0x50000: no imports, no
+# exports, no TOC.  stage0 carries it as a payload: Open Firmware's own xcoff-loader loads stage0
+# in the firmware's factory big-endian mode, and stage0 switches the machine to little-endian and
+# starts the firmware (no NVRAM setting involved).  arcfw.xcf is what the floppy's ARCFW.XCF is.
 ARCFW      = src/arcfw
 ARCFW_SRCS = $(wildcard $(ARCFW)/*.c)
 ARCFW_OBJS = $(patsubst $(ARCFW)/%.c,$(BUILD)/arcfw/%.o,$(ARCFW_SRCS)) $(BUILD)/arcfw/crt0.o $(BUILD)/arcfw/thunks.o $(BUILD)/arcfw/cache.o
@@ -89,7 +92,7 @@ ARCFW_OBJS = $(patsubst $(ARCFW)/%.c,$(BUILD)/arcfw/%.o,$(ARCFW_SRCS)) $(BUILD)/
 $(BUILD)/arcfw:
 	mkdir -p $(BUILD)/arcfw
 
-$(BUILD)/arcfw/%.o: $(ARCFW)/%.c $(ARCFW)/arcfw.h $(ARCFW)/of.h | $(BUILD)/arcfw
+$(BUILD)/arcfw/%.o: $(ARCFW)/%.c $(ARCFW)/arcfw.h $(ARCFW)/of.h $(ARCFW)/dtsnap.h | $(BUILD)/arcfw
 	$(CLANG) $(CFLAGS) -I$(ARCFW) -c $< -o $@
 
 $(BUILD)/arcfw/%.o: $(ARCFW)/%.S | $(BUILD)/arcfw
@@ -98,13 +101,32 @@ $(BUILD)/arcfw/%.o: $(ARCFW)/%.S | $(BUILD)/arcfw
 $(BUILD)/arcfw.elf: $(ARCFW_OBJS) $(ARCFW)/arcfw.ld
 	$(LLD) -T $(ARCFW)/arcfw.ld --emit-relocs -nostdlib -static -o $@ $(ARCFW_OBJS)
 
-$(BUILD)/arcfw.exe: $(BUILD)/arcfw.elf $(TOOLS)/elf2pe.py
-	python3 $(TOOLS)/elf2pe.py $< $@ --raw-coff --entry _start --dllname arcfw.exe
+$(BUILD)/arcfw.bin: $(BUILD)/arcfw.elf
+	$(OBJCOPY) -O binary $< $@
 
-# The same firmware as an XCOFF, for the stock ROM's xcoff-loader (Open Firmware 1.1.22 on the
-# Network Server, and a Power Macintosh's): the 2.26NT ROM's pe-loader is then not needed.
-$(BUILD)/arcfw.xcf: $(BUILD)/arcfw.elf $(TOOLS)/elf2pe.py
-	python3 $(TOOLS)/elf2pe.py $< $@ --xcoff --entry _start
+# stage0: big-endian, an ordinary Open Firmware client program at 0x600000.
+STAGE0    = src/stage0
+TARGET_BE = --target=powerpc-unknown-linux-gnu -mcpu=604
+CFLAGS_BE = $(subst $(TARGET),$(TARGET_BE),$(CFLAGS))
+
+$(BUILD)/stage0:
+	mkdir -p $(BUILD)/stage0
+
+$(BUILD)/stage0/stage0.o: $(STAGE0)/stage0.c $(ARCFW)/dtsnap.h include/oemdisk.h | $(BUILD)/stage0
+	$(CLANG) $(CFLAGS_BE) -c $< -o $@
+
+$(BUILD)/stage0/stage0s.o: $(STAGE0)/stage0.S $(BUILD)/arcfw.bin | $(BUILD)/stage0
+	$(CLANG) $(TARGET_BE) -x assembler-with-cpp -c -DPAYLOAD=\"$(BUILD)/arcfw.bin\" $< -o $@
+
+$(BUILD)/stage0.elf: $(BUILD)/stage0/stage0s.o $(BUILD)/stage0/stage0.o $(STAGE0)/stage0.ld
+	$(LLD) -T $(STAGE0)/stage0.ld -nostdlib -static -o $@ $(BUILD)/stage0/stage0s.o $(BUILD)/stage0/stage0.o
+
+$(BUILD)/stage0.bin: $(BUILD)/stage0.elf
+	$(OBJCOPY) -O binary -j .text $< $@
+
+# .bss's place and size from the ELF: mkxcoff.py checks the place is right after the .data page
+$(BUILD)/arcfw.xcf: $(BUILD)/stage0.bin $(BUILD)/stage0.elf $(TOOLS)/mkxcoff.py
+	python3 $(TOOLS)/mkxcoff.py $< $@ 0x00600000 $(BUILD)/stage0.elf
 
 # The boot floppy:
 #

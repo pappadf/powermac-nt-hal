@@ -33,20 +33,18 @@ jobs:
           set -e
           test -f build/hal.dll
           test -f build/adbport.sys
-          test -f build/arcfw.exe
           test -f build/arcfw.xcf
           test -f build/boot-floppy.img
           python3 tools/pe-exports.py build/adbport.sys | grep -q '01f0\|0x1f0'
-          # arcfw.exe is a raw COFF: machine 0x01F0 in its first two bytes
-          test "$(head -c 2 build/arcfw.exe | od -An -tx1 | tr -d ' ')" = f001
-          # arcfw.xcf is an XCOFF with little-endian headers: f_magic 0x01DF, what the ROM's
-          # xcoff-loader reads once the machine runs little-endian
-          test "$(head -c 2 build/arcfw.xcf | od -An -tx1 | tr -d ' ')" = df01
+          # arcfw.xcf is an XCOFF with big-endian headers: f_magic 0x01DF, what the ROM's
+          # xcoff-loader reads in the firmware's factory mode (src/stage0 switches to
+          # little-endian itself; no NVRAM setting)
+          test "$(head -c 2 build/arcfw.xcf | od -An -tx1 | tr -d ' ')" = 01df
           # the floppy carries nothing of Microsoft's: no such 8.3 directory entry on it
-          for e in 'VENEER  EXE' 'VENEERD EXE' 'SETUPLDR   ' 'CIRRUS  SYS' 'CIRRUS  DLL' 'I8042PRTSYS'; do
+          for e in 'VENEER  EXE' 'VENEERD EXE' 'SETUPLDR   ' 'CIRRUS  SYS' 'CIRRUS  DLL' 'I8042PRTSYS' 'SETUP   OF '; do
             ! grep -aq "$e" build/boot-floppy.img || { echo "$e is on the floppy"; exit 1; }
           done
-          for e in 'ARCFW   XCF' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'SETUP   OF '; do
+          for e in 'ARCFW   XCF' 'HALSHINRDLL' 'ADBPORT SYS' 'BOOT    OF ' 'BOOTDISKOF ' 'RESTORE OF '; do
             grep -aq "$e" build/boot-floppy.img || { echo "$e is missing from the floppy"; exit 1; }
           done
           # A PowerPC (little-endian) PE that NT's loader will accept: machine 0x01F0.
@@ -65,7 +63,7 @@ jobs:
         run: |
           set -e
           bad=0
-          for f in src/*.c src/*.S src/arcfw/*.c src/arcfw/*.S src/arcfw/*.h src/arcfw/*.ld drivers/adbport/*.c drivers/adbport/*.h include/*.h tools/*.py Makefile hal.ld hal.exports hal.imports .github/workflows/*.yml; do
+          for f in src/*.c src/*.S src/arcfw/*.c src/arcfw/*.S src/arcfw/*.h src/arcfw/*.ld src/stage0/*.c src/stage0/*.S src/stage0/*.ld drivers/adbport/*.c drivers/adbport/*.h include/*.h tools/*.py Makefile hal.ld hal.exports hal.imports .github/workflows/*.yml; do
             head -6 "$f" | grep -q '^\(/\*\| \*\|#\) SPDX-License-Identifier: GPL-2.0-only$' \
               || { echo "$f: missing or malformed SPDX identifier (it must be alone on its line)"; bad=1; }
             head -6 "$f" | grep -q 'Copyright (C) 2026 powermac-nt-hal contributors' \
@@ -80,14 +78,12 @@ jobs:
       - name: Rebuild from clean, byte for byte
         run: |
           cp build/hal.dll /tmp/hal-first.dll
-          cp build/arcfw.exe /tmp/arcfw-first.exe
           cp build/arcfw.xcf /tmp/arcfw-first.xcf
           cp build/boot-floppy.img /tmp/floppy-first.img
           make clean
           make
           make floppy
           cmp /tmp/hal-first.dll build/hal.dll
-          cmp /tmp/arcfw-first.exe build/arcfw.exe
           cmp /tmp/arcfw-first.xcf build/arcfw.xcf
           cmp /tmp/floppy-first.img build/boot-floppy.img
 
@@ -98,6 +94,5 @@ jobs:
             build/boot-floppy.img
             build/hal.dll
             build/adbport.sys
-            build/arcfw.exe
             build/arcfw.xcf
           if-no-files-found: error
