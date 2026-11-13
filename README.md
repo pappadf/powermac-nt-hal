@@ -4,18 +4,21 @@
 [![licence: GPL-2.0-only](https://img.shields.io/badge/licence-GPL--2.0--only-blue.svg)](LICENSE)
 
 > [!CAUTION]
-> **Experimental. Do not run this on a real Mac you care about.** This project has only been
-> tested in the [granny-smith](https://github.com/pappadf/granny-smith) emulator, and it comes
-> with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
+> **Experimental, and not supported by Apple. Do not run this on a real Mac you care about.**
+> Apple never supported Windows NT on the Network Server, and this project has only been tested
+> in the [granny-smith](https://github.com/pappadf/granny-smith) emulator, never on real
+> hardware. It drives the processor, the PCI bridges, the SCSI controllers, the power controller
+> and the disks itself, in ways Apple never designed or tested. A bug in it could, in theory,
+> damage the hardware, and it can destroy the data on any disk it can reach: Setup partitions and
+> formats disks. It comes with no warranty (see the [licence](LICENSE), GPL-2.0 sections 11–12).
 >
-> Booting it **changes no NVRAM setting.** Earlier versions stored `little-endian? true` in Open
-> Firmware's NVRAM, which Apple never supported and which has been
+> **It changes no NVRAM setting.** Earlier versions stored `little-endian? true` in Open
+> Firmware's NVRAM, a setting Apple never supported that has been
 > [reported](https://discussions.apple.com/thread/1085726) to leave machines needing an NVRAM
 > reset (at least one could not be recovered). The floppy now leaves the firmware in its factory
 > big-endian mode and switches the processor and the PCI bridges to little-endian itself, until
-> the next reset, the way [maciNTosh](https://github.com/Wack0/maciNTosh)'s loader does on later
-> Macs. If an earlier floppy's `setup.of` was ever run on a machine, run `restore.of` on it once
-> (below) to put the factory values back.
+> the next reset. If an earlier floppy's `setup.of` was ever run on a machine, run `restore.of`
+> on it once (below) to put the factory values back.
 
 *This exists because of [`entii-for-workcubes`](https://github.com/Wack0/entii-for-workcubes) and
 [`maciNTosh`](https://github.com/Wack0/maciNTosh) by **Wack0 (Rairii)**, and
