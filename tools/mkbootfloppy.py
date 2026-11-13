@@ -594,6 +594,133 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
     return '\r\n'.join(L) + '\r\n'
 
 
+def xcoff_image_len(xcf):
+    """What xcoff-loader lays out for this XCOFF: tsize + dsize + bsize, from its a.out header."""
+    return sum(struct.unpack_from('>III', xcf, 20 + 4))
+
+
+def stage0_script(fw_block, fw_blocks, fw_bytes, image_len, fd_dev, boot_dev, env, oem_blocks=0,
+                  title='', banner='', stage=0x01000000, image_base=0x00600000):
+    """\\BOOT.OF and \\BOOTDISK.OF for ARCFW.XCF, the ARC firmware inside its big-endian front end.
+
+    Open Firmware stays in its factory big-endian mode: nothing here, and nothing on the floppy,
+    sets an NVRAM variable.  The script reads ARCFW.XCF off the floppy into RAM at `stage`, moves
+    it to the firmware's default load-base, and has the ROM's own xcoff-loader lay it out (at
+    0x600000) and `go`; stage0 then switches the machine to little-endian itself, until the next
+    reset (src/stage0/stage0.c).
+
+    Three things the little-endian scripts did not need.  xcoff-loader claims the image's pages
+    itself and a claim made here first would make its own fail ("CLAIM failed"), but a Power
+    Macintosh's loader does not map what it claims, so the image's pages are mapped here and not
+    claimed (powermac-os2 met both).  The OEM disk's header (include/oemdisk.h) is written by
+    stage0, not by `!` here: a big-endian `!` stores what NT would read byte-reversed; this
+    script leaves the blocks it read and the disk's size on /chosen for stage0 instead.  And a
+    machine an earlier floppy left in little-endian mode is told to run \\RESTORE.OF first.
+
+    oem_blocks: the whole floppy, read into RAM for Windows NT (\\BOOT.OF); 0 for none."""
+    C = oemdisk_constants()
+    hdr, img = C['OEMDISK_PHYS'], C['OEMDISK_PHYS'] + C['OEMDISK_HEADER_SIZE']
+    claim = (fw_bytes + 0xFFF) & ~0xFFF
+    L = [f'\\ powermac-nt-hal -- {title}',
+         '\\',
+         '\\ Run this at the 0 > prompt with:',
+         f'\\     load fd:,\\{"boot" if oem_blocks else "bootdisk"}.of',
+         '\\     load-base loadsize eval',
+         '\\',
+         '\\ Open Firmware stays in its factory, big-endian mode and this floppy sets no NVRAM',
+         '\\ variable.  ARCFW.XCF\'s first stage switches the CPU and the PCI bridges to',
+         '\\ little-endian itself, until the next reset.  The ARC firmware it starts is this',
+         '\\ project\'s own (src/arcfw); nothing of Microsoft\'s is on this disk.',
+         '',
+         '0 value nt-xl',
+         '0 value nt-fd',
+         '" /chosen" find-package drop value nt-chosen',
+         ': nt-ih ( name$ -- ihandle ) nt-chosen get-package-property drop decode-int nip nip ;',
+         '" memory" nt-ih value nt-mem',
+         '" mmu" nt-ih value nt-mmu',
+         '\\ map pages one-to-one; claim them too, as bookkeeping that may fail harmlessly',
+         ': nt-domap ( addr size -- ) over swap 0 " map" nt-mmu $call-method ;',
+         ': nt-claim ( addr size -- ) 0 " claim" nt-mem [\'] $call-method catch if 2drop 2drop 2drop else drop then ;',
+         ': nt-map ( addr size -- ) 2dup nt-claim nt-domap ;',
+         '\\ a stored 1 that reads back low byte first: the firmware is running little-endian',
+         ': nt-little? ( -- flag ) 1 pad ! pad c@ 1 = ;',
+         '',
+         ': nt-go',
+         '   nt-little? if',
+         '      ." powermac-nt-hal: this firmware is running little-endian, set up by an earlier" cr',
+         '      ." powermac-nt-hal: boot floppy (little-endian? true).  This one needs none of that:" cr',
+         '      ." powermac-nt-hal: load fd:,\\restore.of then load-base loadsize eval, then try again" cr',
+         '      exit',
+         '   then',
+         f'   " /packages/xcoff-loader" open-dev to nt-xl',
+         f'   {stage:X} {claim:X} nt-map',
+         f'   " {fd_dev}" open-dev to nt-fd']
+    addr, blk, left = stage, fw_block, fw_blocks
+    while left > 0:
+        n = min(CHUNK, left)
+        L.append(f'   {addr:X} {blk:X} {n:X} " read-blocks" nt-fd $call-method drop')
+        addr += n * 512
+        blk += n
+        left -= n
+    L += ['   load-base ' + f'{claim:X} nt-map',
+          f'   {stage:X} load-base {fw_bytes:X} move',
+          f'   {fw_bytes:X} to loadsize',
+          f'   {image_base:X} {(image_len + 0xFFF) & ~0xFFF:X} nt-domap',
+          '   " init-program" nt-xl $call-method']
+    if oem_blocks:
+        img_bytes = oem_blocks * C['OEMDISK_BLOCK']
+        L += ['   \\ the whole disk again, for Windows NT: see include/oemdisk.h',
+              '   ." powermac-nt-hal: reading the OEM disk into RAM (this takes a while) " ',
+              f'   {hdr:X} {C["OEMDISK_HEADER_SIZE"] + img_bytes:X} nt-map',
+              '   0']
+        addr, blk, left, k = img, 0, oem_blocks, 0
+        while left > 0:
+            n = min(CHUNK, left)
+            L.append(f'   {addr:X} {blk:X} {n:X} " read-blocks" nt-fd $call-method +' + ('  ." ."' if k % 10 == 9 else ''))
+            addr += n * 512
+            blk += n
+            left -= n
+            k += 1
+        L += ['   dup cr ." powermac-nt-hal: " . ." blocks of the OEM disk are in RAM" cr',
+              '   \\ for stage0, which writes the header NT reads',
+              '   encode-int " arcfw,oemdisk-blocks" _chosen (property)',
+              f'   {img_bytes:X} encode-int " arcfw,oemdisk-bytes" _chosen (property)']
+    L += ['   nt-fd close-dev',
+          f'   " {boot_dev}" encode-string " bootpath" _chosen (property)',
+          '   \\ the ARC environment for this boot, on the node arcfw reads it from']
+    L += env_property_lines(env)
+    L += [f'   ." powermac-nt-hal: {banner}" cr',
+          '   go',
+          ';',
+          '',
+          'nt-go']
+    return '\r\n'.join(L) + '\r\n'
+
+
+def restore_script():
+    """\\RESTORE.OF: put back what earlier boot floppies changed in NVRAM.
+
+    Earlier versions of this floppy ran \\SETUP.OF once per machine, which stored
+    `little-endian? true`, `real-mode? false`, `real-base 3F00000` and `load-base 3E00000` and
+    reset.  This floppy needs none of them.  RESTORE.OF stores the factory values these ROMs
+    report (little-endian? false, real-mode? false, real-base -1, load-base 4000) and resets, so
+    the machine comes back as it left the factory.  Run it only on a machine an earlier floppy
+    set up; on any other it changes nothing that matters."""
+    L = ['\\ powermac-nt-hal -- undo what earlier boot floppies stored in NVRAM.  Run once:',
+         '\\     load fd:,\\restore.of',
+         '\\     load-base loadsize eval',
+         '\\ The machine resets at the end, back in the firmware\'s factory big-endian mode.',
+         '',
+         '." powermac-nt-hal: restoring the factory endianness and memory settings, then resetting" cr',
+         'setenv little-endian? false',
+         'setenv real-mode? false',
+         'setenv real-base -1',
+         'setenv load-base 4000',
+         'reset-all']
+    return '\r\n'.join(L) + '\r\n'
+
+
+
 def setup_script(real_base=0x3F00000, load_base=0x3E00000):
     """The once-per-machine half.  `little-endian?` is firmware NVRAM and `reset-all` is what
     applies it, so no medium can set it before the firmware has read the medium -- this cannot be
@@ -775,7 +902,32 @@ def main():
     # the user's disc: SETUPLDR has OEM prompts for SCSI, Computer and Display and none for the
     # keyboard, so `txtsetup.oem`'s `[Keyboard]` section is read by `setupdd.sys` under NT, long
     # after Setup needs a keyboard.  The root copy stays for the OEM-disk arrangement.
-    if not a.no_scripts:
+    if not a.no_scripts and bname == 'ARCFW.XCF':
+        # the ARC firmware in its big-endian front end: no NVRAM setting anywhere
+        env = arc_environment(a.disk_arc, a.system_partition, a.os_partition, a.osloader,
+                              a.winnt, a.os_options, a.identifier)
+        ilen = xcoff_image_len(veneer)
+        boot = (read(a.boot_script) if a.boot_script
+                else stage0_script(vlba, vblocks, len(veneer), ilen, a.fd_dev, a.cd_dev,
+                                   install_environment(a.cd_arc), oem_blocks=GEOM['total'],
+                                   title='start Windows NT Setup on an Apple Network Server 500/700',
+                                   banner='starting Windows NT Setup').encode('ascii'))
+        c, _ = fs.alloc(boot)
+        root.append(fs.dirent('BOOT.OF', c, len(boot)))
+        bd = stage0_script(dlba, dblocks, len(dveneer), ilen, a.fd_dev, a.disk_dev, env,
+                           title='boot the Windows NT system installed on the hard disk',
+                           banner='starting the installed Windows NT').encode('ascii')
+        c3, _ = fs.alloc(bd)
+        root.append(fs.dirent('BOOTDISK.OF', c3, len(bd)))
+        rs = restore_script().encode('ascii')
+        c2, _ = fs.alloc(rs)
+        root.append(fs.dirent('RESTORE.OF', c2, len(rs)))
+        print(f'  \\BOOT.OF   {len(boot)} bytes   the install:          load fd:,\\boot.of      '
+              f'then  load-base loadsize eval')
+        print(f'  \\BOOTDISK.OF   {len(bd)} bytes   the installed system: load fd:,\\bootdisk.of  '
+              f'then  load-base loadsize eval')
+        print(f'  \\RESTORE.OF   {len(rs)} bytes   only on a machine an earlier floppy set up (little-endian? true)')
+    elif not a.no_scripts:
         boot = (read(a.boot_script) if a.boot_script
                 else boot_script(vlba, vblocks, len(veneer), a.fd_dev, a.cd_dev, GEOM['total'],
                                  firmware=bname,

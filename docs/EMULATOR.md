@@ -90,14 +90,12 @@ everything from here on, every Open Firmware line and Setup key included.
 At the `0 >` prompt:
 
 ```forth
-load fd:,\setup.of         \ once per machine; it resets at the end
-load-base loadsize eval
-
-load fd:,\boot.of          \ every boot, to install from the CD
+load fd:,\boot.of          \ to install from the CD
 load-base loadsize eval
 ```
 
-and `\bootdisk.of` in place of `\boot.of` to start what you installed. The README and the
+and `\bootdisk.of` in place of `\boot.of` to start what you installed. Nothing is configured
+first: the firmware stays in its factory big-endian mode and nothing is stored in NVRAM. The README and the
 [wiki](https://github.com/pappadf/powermac-nt-hal/wiki) have the screen-by-screen walk through
 Setup.
 

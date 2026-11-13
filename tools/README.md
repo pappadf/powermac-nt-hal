@@ -30,7 +30,7 @@ links against it. Setting the emulator up is [`../docs/EMULATOR.md`](../docs/EMU
 
 ## The delivery loop
 
-1. Build: `make` → `build/hal.dll`, `build/adbport.sys`, `build/arcfw.xcf` (and `build/arcfw.exe`).
+1. Build: `make` → `build/hal.dll`, `build/adbport.sys`, `build/arcfw.xcf` (the ARC firmware inside `src/stage0`, its big-endian front end).
 2. Floppy: `make floppy` → `build/boot-floppy.img`. Rebuild it whenever any of the three
    changes; the copies on the floppy are the ones Setup and the firmware load.
 3. Disk: `make disk` → `build/nt-disk.img`, once.

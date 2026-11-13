@@ -157,7 +157,7 @@ typedef struct _SYSTEM_PARAMETER_BLOCK {
 #define PHYS(v)    ((ULONG)(v) & ~ARC_KSEG0)
 
 /* ---- the shim's own ------------------------------------------------------------------------- */
-VOID arcfw_main(VOID);
+VOID arcfw_main(ULONG snapshot);
 VOID arcfw_enter(PVOID entry, ULONG argc, PCHAR *argv, PCHAR *envp) __attribute__((noreturn));
 
 /* console.c */

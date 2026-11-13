@@ -64,23 +64,22 @@ disk at the right ids.
 `/bandit/53c825@11/sd@0,0` and `bootdisk.of` at `/bandit/53c825@12/sd@0,0`. A CD anywhere else
 gets you to the firmware and then `arcfw: fatal: cannot load '...\PPC\SETUPLDR'`.
 
-**RAM is not negotiable.** `setup.of` puts the load address at 62 MB. On a 32 MB machine the
-`load` still says `ok`, and the `eval` then fails with an unknown word whose name prints as a
-run of blanks. That blank word is the signature of too little RAM.
+**RAM is not negotiable.** `boot.of` reads the whole floppy into RAM at 59 MB for NT
+(`include/oemdisk.h`), so the machine needs 64 MB.
 
-## 3. The firmware: three lines
+## 3. The firmware: two lines
 
 Cold-boot. The firmware tries its default device, fails, and stops at `0 >`. That failure is
 normal.
 
-**Once per machine** (it saves little-endian mode and the load addresses to NVRAM, then resets):
+There is nothing to configure: the firmware stays in its factory big-endian mode and nothing is
+stored in NVRAM. `ARCFW.XCF`'s first stage (`src/stage0`) switches the processor and the PCI
+bridges to little-endian itself, until the next reset. (Earlier versions had a `setup.of` that
+stored `little-endian? true` and the load addresses in NVRAM. On a machine where it was run,
+`boot.of` says so and stops; run `restore.of` the same way once, and the machine resets with the
+factory values back.)
 
-```forth
-load fd:,\setup.of
-load-base loadsize eval
-```
-
-Wait for `0 >` to come back. **Then, to install:**
+**To install:**
 
 ```forth
 load fd:,\boot.of
@@ -90,10 +89,11 @@ load-base loadsize eval
 You should see the firmware load, the floppy read into RAM, and SETUPLDR start off the CD:
 
 ```
-tsize=B288 dsize=0 bsize=61CC entry=5B280
+tsize=F000 dsize=1000 bsize=95000 entry=60EC90
 SECTIONS:
-.text    00050000 00050000 0000B288 000000AC
-.bss     0005B288 0005B288 000061CC 00000000
+.text    00600000 00600000 0000F000 000000D4
+.data    0060F000 0060F000 00001000 0000F0D4
+.bss     00610000 00610000 00095000 00000000
 loading .text, done..
 loading .data, done..
 clearing .bss, done..
@@ -101,16 +101,26 @@ powermac-nt-hal: reading the OEM disk into RAM (this takes a while) .........
 powermac-nt-hal: B40 blocks of the OEM disk are in RAM
 powermac-nt-hal: starting Windows NT Setup
 
+stage0: powermac-nt-hal, Open Firmware in its factory big-endian mode
+stage0: RAM 0x04000000
+stage0: Bandit at 0xF2000000
+stage0: Bandit at 0xF4000000
+stage0: device tree taken, 0x00000033 nodes, 0x00007700 bytes
+stage0: switching to little-endian mode (until the next reset)
+
 Arcfw 0.1: ARC firmware for the Apple Network Server (powermac-nt-hal)
+arcfw: little-endian since stage0; Open Firmware left in its factory mode, nothing in NVRAM changed
 arcfw: system parameter block at 4000, 37 vector entries
-arcfw: KSEG0 mapped, 800000 bytes
 arcfw: configuration tree built
 arcfw: booting 'multi(0)scsi(0)cdrom(0)fdisk(0)\PPC\SETUPLDR'
 arcfw: loaded at 80600000..80647200, entry descriptor 80641aac
 arcfw: starting the loader
 ```
 
-then SETUPLDR's blue *Windows NT Setup* screen on the serial console and the monitor.
+From `stage0:` on, everything is on the serial console (ttya) only: Open Firmware is gone, and
+the ARC firmware drives the ESCC itself.
+
+then SETUPLDR's blue *Windows NT Setup* screen on the serial console.
 
 The comma after `fd:` is required: Open Firmware reads what follows `:` as a partition number.
 `dir fd:,\` lists the floppy if you want to check the drive is live first.
@@ -161,18 +171,26 @@ Workstation Version 4.00*, the kernel loads, the HAL comes up, and after `autoch
 wizard is drawn:
 
 ```
-tsize=B288 dsize=0 bsize=61CC entry=5B280
+tsize=F000 dsize=1000 bsize=95000 entry=60EC90
 SECTIONS:
-.text    00050000 00050000 0000B288 000000AC
-.bss     0005B288 0005B288 000061CC 00000000
+.text    00600000 00600000 0000F000 000000D4
+.data    0060F000 0060F000 00001000 0000F0D4
+.bss     00610000 00610000 00095000 00000000
 loading .text, done..
 loading .data, done..
 clearing .bss, done..
 powermac-nt-hal: starting the installed Windows NT
 
+stage0: powermac-nt-hal, Open Firmware in its factory big-endian mode
+stage0: RAM 0x04000000
+stage0: Bandit at 0xF2000000
+stage0: Bandit at 0xF4000000
+stage0: device tree taken, 0x00000033 nodes, 0x00007800 bytes
+stage0: switching to little-endian mode (until the next reset)
+
 Arcfw 0.1: ARC firmware for the Apple Network Server (powermac-nt-hal)
+arcfw: little-endian since stage0; Open Firmware left in its factory mode, nothing in NVRAM changed
 arcfw: system parameter block at 4000, 37 vector entries
-arcfw: KSEG0 mapped, 800000 bytes
 arcfw: configuration tree built
 arcfw: booting 'multi(0)scsi(1)disk(0)rdisk(0)partition(1)\os\winnt40\osloader.exe'
 arcfw: loaded at 80600000..8064a800, entry descriptor 80643d38
@@ -183,7 +201,7 @@ OS Loader V4.00
 `setenv ARCFW-DEBUG 7fff` at the `0 >` prompt before the `load` makes the firmware trace every
 ARC call NT's loader makes (the tree it hands over, the memory descriptors, every `Open`, `Read`
 and `GetEnvironmentVariable`) on the serial console; `setenv ARCFW-DEBUG 0` turns it off again.
-The value is kept in NVRAM. The production 1.1.22 ROM's `setenv` takes only the names it knows
+The value is kept in NVRAM, which is the only NVRAM change involved, and yours to make; `setenv ARCFW-DEBUG 0` undoes it. The production 1.1.22 ROM's `setenv` takes only the names it knows
 (`invalid CONFIG name`); there, set it as a property instead:
 
 ```forth
@@ -257,13 +275,14 @@ authoritative, runnable form of it.
 
 Until 6 November 2026 this needed the 2.26NT ROM, the Open Firmware Apple built for NT: it
 starts the machine little-endian when `little-endian?` is set, and it carries `pe-loader`, which
-reads NT's PE/COFF images. The production 1.1.22 ROM has the first of those too (the `setup.of`
-step is the same on both), and the firmware now needs nothing else from a ROM:
+reads NT's PE/COFF images. Since 13 November the floppy uses neither: both ROMs stay big-endian
+and load `ARCFW.XCF` with their `xcoff-loader`, and its first stage switches to little-endian
+itself:
 
 | | 1.1.22 (production) | 2.26NT |
 |---|---|---|
-| `setup.of` | `setenv little-endian? true`, `real-mode? false`, `real-base`, `load-base`, reset | the same |
-| What loads `ARCFW.XCF` | the ROM's `xcoff-loader`; `bootdisk.of`/`boot.of` claim and map its pages through `/chosen`'s `memory` and `mmu` | the same `xcoff-loader` (the 2.26NT ROM has it too) |
+| NVRAM | nothing is changed | the same |
+| What loads `ARCFW.XCF` | the ROM's `xcoff-loader`, big-endian; `bootdisk.of`/`boot.of` map its pages through `/chosen`'s `mmu` | the same `xcoff-loader` (the 2.26NT ROM has it too) |
 | Files on the system partition | `arcfw` reads the disk raw and walks the MBR, the FAT and the directories itself (`src/arcfw/fat.c`): the ROM's `fat-files` opens `\OS\` but not `\OS\WINNT40\`, and its `sd@0,0:1` instance answers 0 bytes to every read | the same code; the ROM's packages would have worked |
 | Files on the CD | `arcfw` walks ISO 9660 itself (the ROM's `iso-9660-files` opens a file and then refuses to read it, on both ROMs) | the same |
 | `ARCFW-DEBUG` | a property on `/options` (above) | `setenv` |
