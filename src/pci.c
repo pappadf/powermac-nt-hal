@@ -10,8 +10,11 @@
  * IDSEL 11 do not exist; an absent IDSEL reads all-ones. */
 #include "hal.h"
 
+/* A bus the machine does not have is answered as absent, never by touching its address: a Power
+ * Macintosh 8500 has no second Bandit, and a cycle to 0xF4000000 there would be a machine check. */
 static ULONG HalpBanditBase(ULONG BusNumber)
 {
+    if (BusNumber >= HalpBanditCount()) return 0;
     return BusNumber == 0 ? BANDIT1_BASE : BusNumber == 1 ? BANDIT2_BASE : 0;
 }
 
@@ -35,18 +38,6 @@ static VOID HalpPciCfgWrite(ULONG base, ULONG dev, ULONG fn, ULONG off, ULONG si
     case 2: MmioWrite16(p, (USHORT)v); break;
     default: MmioWrite32(p, v); break;
     }
-}
-
-/* Interrupt routing of the Network Server, Grand Central bit per PCI device (Apple, Network
- * Server Hardware Developer Notes §4.2 and §4.6.2): bus 0 slots 1-2 at IDSEL 13-14 (EXT3, EXT4),
- * the 54M30 at 15 has no interrupt, Grand Central itself at 16, the two 53C825As at 17 and 18
- * (EXT2 = FW0, EXT6 = FW1); bus 1 slots 3-6 at IDSEL 13-16 (EXT5, EXT7, EXT8, EXT9).  The
- * device's Interrupt Line register does not say this, so config reads report it here. */
-UCHAR HalpPciInterruptLine(ULONG bus, ULONG dev)
-{
-    if (bus == 0) switch (dev) { case 13: return 23; case 14: return 24; case 17: return GC_IRQ_FWSCSI0; case 18: return GC_IRQ_FWSCSI1; default: return 0xFF; }
-    if (bus == 1) switch (dev) { case 13: return 25; case 14: return 27; case 15: return 28; case 16: return 29; default: return 0xFF; }
-    return 0xFF;
 }
 
 /* copy Length bytes of config space at Offset, honouring natural alignment.  Returns 0 only
@@ -85,12 +76,13 @@ static ULONG HalpPciAccess(ULONG BusNumber, ULONG SlotNumber, PUCHAR Buffer, ULO
     if (!Write) {
         if (Offset <= 0x3C && Offset + done > 0x3C)
             Buffer[0x3C - Offset] = HalpPciInterruptLine(BusNumber, dev);   /* Interrupt Line */
-        /* The shipped symc810 miniport claims the 53C810 (device id 0x0001); this machine's
-         * controllers are 53C825As (0x0003).  Report 0x0001 for them so scsiport hands the
+        /* The shipped symc810 miniport claims the 53C810 (device id 0x0001); the Network
+         * Server's controllers are 53C825As (0x0003), and so is the Symbios card a Power
+         * Macintosh takes in a slot.  Report 0x0001 for every 53C825A so scsiport hands the
          * adapter to the miniport — the 825A is register-compatible for what Setup needs
          * (a Phase 2 experiment; see docs/2026-09-06-first-boot.md). */
-        if (BusNumber == 0 && (dev == 17 || dev == 18)) {
-            if (Offset <= 2 && Offset + done > 3) { Buffer[2 - Offset] = 0x01; Buffer[3 - Offset] = 0x00; }
+        if (Offset <= 2 && Offset + done > 3 && HalpPciCfgRead(base, dev, fn, 0, 4) == 0x00031000u) {
+            Buffer[2 - Offset] = 0x01; Buffer[3 - Offset] = 0x00;
         }
     }
     return done;

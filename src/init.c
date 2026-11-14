@@ -161,7 +161,8 @@ BOOLEAN HalInitSystem(ULONG Phase, PLOADER_PARAMETER_BLOCK LoaderBlock)
         }
         HalpMapIo();
         HalpInitializeDisplay(LoaderBlock);
-        HalpPrint("\nHAL: halshinr %s (%s) for the Apple Network Server (phase 0)\n", HalpVersion, HalpBuildTag);
+        HalpPrint("\nHAL: halshinr %s (%s) for the Bandit machines (phase 0)\n", HalpVersion, HalpBuildTag);
+        HalpIdentifyMachine(LoaderBlock);
         HalpPrint("HAL: I/O base %x, PVR %x, MSR %x, PCR %x, loader block %x\n",
                   (ULONG)HalpIoBase, HalpReadPvr(), HalpReadMsr(), (ULONG)PCR, (ULONG)LoaderBlock);
         HalpPrint("HAL: GC events %x mask %x levels %x\n", MmioRead32(GC_INT_EVENTS), MmioRead32(GC_INT_MASK), MmioRead32(GC_INT_LEVELS));

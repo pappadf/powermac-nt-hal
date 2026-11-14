@@ -45,6 +45,15 @@ installed system, go through this project's own ARC firmware (`src/arcfw`,
 the CD, which earlier builds patched and carried, is gone. A built floppy is GPL-2.0-only and may
 be shared, and [the releases](https://github.com/pappadf/powermac-nt-hal/releases) carry one.
 
+**Also a Power Macintosh 7500 or 8500, with two cards.** The same floppy and HAL install and boot
+NT on a Power Macintosh 8500 (and, by the same wiring, a 7500) that has a Symbios 53C825A SCSI
+card and a Cirrus Logic 54M30 VGA card, the two chips NT already has drivers for. The CD-ROM goes
+at ID 3 and the disk at ID 0 on the SCSI card, the monitor on the VGA card; the scripts find the
+card in slot A1, B1 or C1, and at Setup's computer-type prompt the one entry, "Apple Network
+Server 500/700", is the right choice there too (the HAL tells the two machines apart itself). The
+8500's own SCSI (MESH, and the 53C94 the CD-ROM sits on) and its on-board video (Control) have no
+NT drivers yet, so an 8500 without those cards cannot run NT.
+
 **What does not, yet.** Networking: there is no adapter driver, and GUI Setup is told not to
 participate. Real hardware: nothing has been tried outside the emulator.
 
