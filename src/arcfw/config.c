@@ -185,7 +185,12 @@ static VOID add_scsi_adapter(PARC_NODE parent, OF_PHANDLE node, const CHAR *path
 {
     CHAR model[32];
     of_get_str(node, "model", model, sizeof model);
-    const CHAR *ident = strncmp(model, "NCR,", 4) == 0 ? "NCRC810" : "UNKNOWN SCSI";
+    /* NCRC810 is the identifier the HAL repairs and NT's symc810 miniport serves: the
+     * Network Server's on-board 53C825As (model "NCR,53C825"), and a Symbios card in a Power
+     * Macintosh slot, whose node carries no model -- the card has no FCode -- only its PCI ids */
+    ULONG vendor = 0;
+    of_get_int(node, "vendor-id", &vendor);
+    const CHAR *ident = strncmp(model, "NCR,", 4) == 0 || (pci && vendor == 0x1000) ? "NCRC810" : "UNKNOWN SCSI";
     PARC_NODE a = new_node(parent, AdapterClass, ScsiAdapter, scsi_adapters++, 0, ident);
     a->OfPhandle = node; a->OfPath = strdup_(path);
     if (pci) {
@@ -287,11 +292,16 @@ static VOID add_bandit(OF_PHANDLE bandit, ULONG key)
         of_get_str(c, "name", name, sizeof name);
         of_get_str(c, "device_type", dt, sizeof dt);
         of_package_to_path(c, path, sizeof path);
-        if (strcmp(dt, "scsi") == 0) {
+        /* A card without FCode gets a node named pci<vendor>,<device> and no device_type (a
+         * Power Macintosh's slots, where a Symbios SCSI card or a Cirrus VGA card has none);
+         * its PCI class code says what it is instead. */
+        ULONG cls = 0xFFFFFFFFu;
+        of_get_int(c, "class-code", &cls);
+        if (strcmp(dt, "scsi") == 0 || (!dt[0] && (cls >> 8) == 0x0100u)) {
             add_scsi_adapter(pci, c, path, TRUE);
         } else if (strcmp(dt, "dbdma") == 0 || strcmp(name, "gc") == 0) {
             add_gc_devices(pci, c, path);
-        } else if (strcmp(dt, "display") == 0) {
+        } else if (strcmp(dt, "display") == 0 || (!dt[0] && (cls >> 16) == 0x03u)) {
             CHAR model[32]; of_get_str(c, "model", model, sizeof model);
             PARC_NODE v = new_node(pci, ControllerClass, DisplayController, 0, ARC_FLAG_CONSOLEOUT | ARC_FLAG_OUTPUT, model[0] ? model : name);
             v->OfPhandle = c; v->OfPath = strdup_(path);
@@ -306,16 +316,32 @@ static VOID add_bandit(OF_PHANDLE bandit, ULONG key)
     }
 }
 
-static VOID add_root_data(VOID)
+/* The veneer's device-specific root data: a run of strings naming the firmware, then two pairs
+ * this firmware adds for the HAL, which has no other way to learn them before it starts the
+ * clock: the machine (Open Firmware's root `compatible`, first entry: "AAPL,8500" on a Power
+ * Macintosh 8500) and the processor's timebase in hertz (the cpu node's timebase-frequency,
+ * 11 MHz on a Network Server, 10 MHz on a 120 MHz 8500).  A HAL that does not look ignores
+ * them; the kernel copies the data into the registry unread. */
+static VOID add_root_data(OF_PHANDLE ofroot, ULONG tb_hz)
 {
-    /* the veneer's device-specific root data: a run of strings naming the firmware */
-    static const CHAR tail[] = "Firmware\0OpenFirmware2.26\0Veneer\0powermac-nt-hal,arcfw,0.1,GENERAL\0";
-    ULONG dlen = sizeof tail;
+    static const CHAR head[] = "Firmware\0OpenFirmware2.26\0Veneer\0powermac-nt-hal,arcfw,0.1,GENERAL\0";
+    static CHAR tail[sizeof head + 96];
+    CHAR model[48] = "";
+    of_get_str(ofroot, "compatible", model, sizeof model);    /* the first string of the list */
+    ULONG at = sizeof head - 1;
+    memcpy(tail, head, at);
+    at += (ULONG)con_snprintf(tail + at, sizeof tail - at, "Model") + 1;
+    at += (ULONG)con_snprintf(tail + at, sizeof tail - at, "%s", model) + 1;
+    at += (ULONG)con_snprintf(tail + at, sizeof tail - at, "TimebaseHz") + 1;
+    at += (ULONG)con_snprintf(tail + at, sizeof tail - at, "%u", tb_hz) + 1;
+    ULONG dlen = at + 1;                                       /* and an empty string to end */
+    tail[at] = 0;
     PCM_PARTIAL_RESOURCE_LIST l = new_list(root, 1, dlen);
     PCM_PARTIAL_RESOURCE_DESCRIPTOR d = &l->PartialDescriptors[0];
     d->Type = CmResourceTypeDeviceSpecific; d->ShareDisposition = CmResourceShareDeviceExclusive;
     d->u.DeviceSpecificData.DataSize = dlen;
     memcpy((UCHAR *)l + 8 + sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR), tail, dlen);
+    DBG(DBG_CONFIG, "arcfw: machine '%s', timebase %u Hz\n", model, tb_hz);
 }
 
 VOID config_build(VOID)
@@ -323,7 +349,7 @@ VOID config_build(VOID)
     OF_PHANDLE ofroot = of_finddevice("/");
     root = new_node(NULL, SystemClass, ArcSystem, 0, 0, "device-tree");
     root->OfPhandle = ofroot;
-    add_root_data();
+    add_root_data(ofroot, of_timebase_hz());
     OF_PHANDLE mem = OF_NONE;
     ULONG bandits = 0, bridges = 2;
     for (OF_PHANDLE c = of_child(ofroot); c; c = of_peer(c)) {

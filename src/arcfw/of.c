@@ -259,6 +259,10 @@ static BOOLEAN is_scsi_bus(OF_PHANDLE n)
 {
     CHAR nm[32], dt[32];
     if (of_get_str(n, "name", nm, sizeof nm) >= 0 && strncasecmp(nm, "53c825", 6) == 0) return TRUE;
+    /* a Symbios card without FCode in a Power Macintosh slot: pci1000,3, no device_type */
+    ULONG vendor = 0, cls = 0;
+    if (of_get_int(n, "vendor-id", &vendor) && of_get_int(n, "class-code", &cls) &&
+        vendor == 0x1000 && (cls >> 8) == 0x0100u) return TRUE;
     return of_get_str(n, "device_type", dt, sizeof dt) >= 0 && strcmp(dt, "scsi") == 0;
 }
 
@@ -411,7 +415,7 @@ LONG of_claim_real(ULONG addr, ULONG size)
     return 0;
 }
 
-static ULONG tb_per_ms;
+static ULONG tb_per_ms, tb_hz;
 static ULONG tb_lo(VOID) { ULONG t; __asm__ volatile("mftb %0" : "=r"(t)); return t; }
 ULONG of_milliseconds(VOID)
 {
@@ -501,4 +505,6 @@ VOID of_init(ULONG snapshot)
         if (of_get_int(cpu, "bus-frequency", &bus) || of_get_int(of_peer(0), "clock-frequency", &bus)) f = bus / 4;
     }
     tb_per_ms = f >= 1000000 ? f / 1000 : 10000;
+    tb_hz = tb_per_ms * 1000;
 }
+ULONG of_timebase_hz(VOID) { return tb_hz; }

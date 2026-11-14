@@ -44,6 +44,7 @@ LONG of_claim_real(ULONG addr, ULONG size);                 /* claim phys = virt
 
 /* time, reset, power */
 ULONG of_milliseconds(VOID);
+ULONG of_timebase_hz(VOID);      /* the cpu node's timebase-frequency, in hertz */
 LONG of_interpret(const CHAR *forth);                       /* "reset-all", "shut-down" */
 VOID of_exit(VOID) __attribute__((noreturn));
 VOID of_enter(VOID);

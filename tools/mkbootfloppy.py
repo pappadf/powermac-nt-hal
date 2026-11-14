@@ -367,6 +367,13 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
     init = '   " init-program" nt-pe $call-method' if stock else '   init-program'
     pre = ([f'" /chosen" find-package drop value nt-chosen',
             ': nt-ih ( name$ -- ihandle ) nt-chosen get-package-property drop decode-int nip nip ;',
+         '\\ a property on /chosen or /options: find-device, property, device-end -- the IEEE 1275',
+         '\\ words every one of these ROMs has (Open Firmware 1.0.5 has no (property) and no _chosen).',
+         '\\ 1.0.5\'s property writes to my-self\'s package while there is one, and `load` leaves my-self',
+         '\\ at the floppy\'s instance, so my-self is cleared around it',
+         ': nt-prop! ( value$ name$ node$ -- ) my-self >r 0 to my-self find-device property device-end r> to my-self ;',
+         ': nt-chosen! ( value$ name$ -- ) " /chosen" nt-prop! ;',
+         ': nt-options! ( value$ name$ -- ) " /options" nt-prop! ;',
             '" memory" nt-ih value nt-mem',
             '" mmu" nt-ih value nt-mmu',
             '\\ map the pages at addr at the same address, as pe-loader\'s map-space did.  The claim is',
@@ -443,7 +450,7 @@ def boot_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, cd_dev, disk_
           f'   {C["OEMDISK_BLOCK"]:X} {hdr + 0x10:X} !      \\ BlockBytes',
           f'   0 {hdr + 0x18:X} !   0 {hdr + 0x1C:X} !',
           '   nt-fd close-dev',
-          f'   " {cd_dev}" encode-string " bootpath" _chosen (property)']
+          f'   " {cd_dev}" encode-string " bootpath" nt-chosen!']
     if firmware.startswith('ARCFW'):
         L += ['   \\ the ARC environment for this boot: SETUPLDR off the CD, on the node arcfw reads']
         L += env_property_lines(env or [])
@@ -493,9 +500,9 @@ def env_property_lines(env, indent='   '):
     firmware, the /options node.  It is set here, by the boot script, for this boot -- not stored
     in NVRAM by setup.of -- because the veneer honours OSLOADER over its own boot path, so a
     stored environment turns the *CD* boot into a boot of the disk (E26).  `setenv` is the
-    interactive form and reads the rest of the line, so it cannot sit in a definition; (property)
-    can."""
-    return [f'{indent}" {value}" encode-string " {name}" " /options" find-package drop (property)'
+    interactive form and reads the rest of the line, so it cannot sit in a definition;
+    nt-options! (find-device, property, device-end) can."""
+    return [f'{indent}" {value}" encode-string " {name}" nt-options!'
             for name, value in env]
 
 
@@ -532,6 +539,13 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
     init = '   " init-program" nt-pe $call-method' if stock else '   init-program'
     pre = ([f'" /chosen" find-package drop value nt-chosen',
             ': nt-ih ( name$ -- ihandle ) nt-chosen get-package-property drop decode-int nip nip ;',
+         '\\ a property on /chosen or /options: find-device, property, device-end -- the IEEE 1275',
+         '\\ words every one of these ROMs has (Open Firmware 1.0.5 has no (property) and no _chosen).',
+         '\\ 1.0.5\'s property writes to my-self\'s package while there is one, and `load` leaves my-self',
+         '\\ at the floppy\'s instance, so my-self is cleared around it',
+         ': nt-prop! ( value$ name$ node$ -- ) my-self >r 0 to my-self find-device property device-end r> to my-self ;',
+         ': nt-chosen! ( value$ name$ -- ) " /chosen" nt-prop! ;',
+         ': nt-options! ( value$ name$ -- ) " /options" nt-prop! ;',
             '" memory" nt-ih value nt-mem',
             '" mmu" nt-ih value nt-mmu',
             '\\ map the pages at addr at the same address, as pe-loader\'s map-space did.  The claim is',
@@ -583,7 +597,7 @@ def boot_disk_script(veneer_block, veneer_blocks, veneer_bytes, fd_dev, disk_dev
         end = (loader_base & 0x7FFFFFFF) + loader_size
         L += ['   \\ the loader is not a whole number of pages; claim the rest of its last page (E24)',
               mapcall(end, pad)]
-    L += [f'   " {disk_dev}" encode-string " bootpath" _chosen (property)',
+    L += [f'   " {disk_dev}" encode-string " bootpath" nt-chosen!',
           '   \\ the ARC environment for this boot, on the node the veneer reads it from']
     L += env_property_lines(env)
     L += ['   ." powermac-nt-hal: starting the installed Windows NT" cr',
@@ -599,7 +613,36 @@ def xcoff_image_len(xcf):
     return sum(struct.unpack_from('>III', xcf, 20 + 4))
 
 
-def stage0_script(fw_block, fw_blocks, fw_bytes, image_len, fd_dev, boot_dev, env, oem_blocks=0,
+def target_select_lines(targets):
+    """Forth that sets nt-t to the first of `targets` whose probe node exists, or stops."""
+    L = []
+    for n, (what, probe, boot_dev, env) in enumerate(targets, 1):
+        L.append(f'   nt-t 0= if " {probe}" find-package if drop {n} to nt-t '
+                 f'." powermac-nt-hal: {what}" cr then then')
+    L += ['   nt-t 0= if',
+          '      ." powermac-nt-hal: no SCSI controller this floppy knows: an Apple Network Server\'s" cr',
+          '      ." powermac-nt-hal: own, or a Symbios 53C825A card in a Power Macintosh 7500/8500 slot" cr',
+          '      exit',
+          '   then']
+    return L
+
+
+def machine_targets(ans_dev, ans_env, card_target, card_env):
+    """The machines a floppy serves, in the order the script tries them: the Network Server, by
+    its own first 53C825A (on either ROM the node is /bandit/53c825@11), with the paths given on
+    the command line; then a Power Macintosh 7500 or 8500 with a Symbios 53C825A card in slot A1,
+    B1 or C1 (IDSEL 13, 14, 15 -- the card has no FCode, so Open Firmware names it pci1000,3),
+    where the CD-ROM and the disk share that card at `card_target` and arcfw numbers it scsi(2),
+    after the on-board 53C94 and MESH.  card_env(arc) builds that machine's environment."""
+    T = [('an Apple Network Server', '/bandit/53c825@11', ans_dev, ans_env)]
+    for slot, dev in (('A1', 'D'), ('B1', 'E'), ('C1', 'F')):
+        node = f'/bandit/pci1000,3@{dev}'
+        T.append((f'a Power Macintosh with a Symbios card in slot {slot}', node,
+                  f'{node}/sd@{card_target:x},0', card_env))
+    return T
+
+
+def stage0_script(fw_block, fw_blocks, fw_bytes, image_len, fd_dev, targets, oem_blocks=0,
                   title='', banner='', stage=0x01000000, image_base=0x00600000):
     """\\BOOT.OF and \\BOOTDISK.OF for ARCFW.XCF, the ARC firmware inside its big-endian front end.
 
@@ -616,6 +659,10 @@ def stage0_script(fw_block, fw_blocks, fw_bytes, image_len, fd_dev, boot_dev, en
     stage0, not by `!` here: a big-endian `!` stores what NT would read byte-reversed; this
     script leaves the blocks it read and the disk's size on /chosen for stage0 instead.  And a
     machine an earlier floppy left in little-endian mode is told to run \\RESTORE.OF first.
+
+    targets: [(what, probe, bootpath, env)], one per machine the floppy serves (see
+    machine_targets): the script takes the first whose `probe` node Open Firmware has, before it
+    reads anything, and stops with a message when there is none.
 
     oem_blocks: the whole floppy, read into RAM for Windows NT (\\BOOT.OF); 0 for none."""
     C = oemdisk_constants()
@@ -634,8 +681,16 @@ def stage0_script(fw_block, fw_blocks, fw_bytes, image_len, fd_dev, boot_dev, en
          '',
          '0 value nt-xl',
          '0 value nt-fd',
+         '0 value nt-t',
          '" /chosen" find-package drop value nt-chosen',
          ': nt-ih ( name$ -- ihandle ) nt-chosen get-package-property drop decode-int nip nip ;',
+         '\\ a property on /chosen or /options: find-device, property, device-end -- the IEEE 1275',
+         '\\ words every one of these ROMs has (Open Firmware 1.0.5 has no (property) and no _chosen).',
+         '\\ 1.0.5\'s property writes to my-self\'s package while there is one, and `load` leaves my-self',
+         '\\ at the floppy\'s instance, so my-self is cleared around it',
+         ': nt-prop! ( value$ name$ node$ -- ) my-self >r 0 to my-self find-device property device-end r> to my-self ;',
+         ': nt-chosen! ( value$ name$ -- ) " /chosen" nt-prop! ;',
+         ': nt-options! ( value$ name$ -- ) " /options" nt-prop! ;',
          '" memory" nt-ih value nt-mem',
          '" mmu" nt-ih value nt-mmu',
          '\\ map pages one-to-one; claim them too, as bookkeeping that may fail harmlessly',
@@ -651,8 +706,9 @@ def stage0_script(fw_block, fw_blocks, fw_bytes, image_len, fd_dev, boot_dev, en
          '      ." powermac-nt-hal: boot floppy (little-endian? true).  This one needs none of that:" cr',
          '      ." powermac-nt-hal: load fd:,\\restore.of then load-base loadsize eval, then try again" cr',
          '      exit',
-         '   then',
-         f'   " /packages/xcoff-loader" open-dev to nt-xl',
+         '   then']
+    L += target_select_lines(targets)
+    L += [f'   " /packages/xcoff-loader" open-dev to nt-xl',
          f'   {stage:X} {claim:X} nt-map',
          f'   " {fd_dev}" open-dev to nt-fd']
     addr, blk, left = stage, fw_block, fw_blocks
@@ -683,12 +739,15 @@ def stage0_script(fw_block, fw_blocks, fw_bytes, image_len, fd_dev, boot_dev, en
             k += 1
         L += ['   dup cr ." powermac-nt-hal: " . ." blocks of the OEM disk are in RAM" cr',
               '   \\ for stage0, which writes the header NT reads',
-              '   encode-int " arcfw,oemdisk-blocks" _chosen (property)',
-              f'   {img_bytes:X} encode-int " arcfw,oemdisk-bytes" _chosen (property)']
+              '   encode-int " arcfw,oemdisk-blocks" nt-chosen!',
+              f'   {img_bytes:X} encode-int " arcfw,oemdisk-bytes" nt-chosen!']
     L += ['   nt-fd close-dev',
-          f'   " {boot_dev}" encode-string " bootpath" _chosen (property)',
-          '   \\ the ARC environment for this boot, on the node arcfw reads it from']
-    L += env_property_lines(env)
+          '   \\ /chosen bootpath and the ARC environment for this machine, on the nodes arcfw reads']
+    for n, (what, probe, boot_dev, env) in enumerate(targets, 1):
+        L += [f'   nt-t {n} = if',
+              f'      " {boot_dev}" encode-string " bootpath" nt-chosen!']
+        L += env_property_lines(env, indent='      ')
+        L += ['   then']
     L += [f'   ." powermac-nt-hal: {banner}" cr',
           '   go',
           ';',
@@ -906,15 +965,25 @@ def main():
         # the ARC firmware in its big-endian front end: no NVRAM setting anywhere
         env = arc_environment(a.disk_arc, a.system_partition, a.os_partition, a.osloader,
                               a.winnt, a.os_options, a.identifier)
+        # A Power Macintosh 7500/8500 with a Symbios card: the CD-ROM at ID 3 on the card (where
+        # Apple put the internal CD-ROM on its own bus) and the disk at ID 0, both on scsi(2);
+        # arcfw asks only target 0 and the targets the variables name as disks, so the CD's
+        # target is listed for it
+        mac_cd_arc = 'multi(0)scsi(2)cdrom(3)fdisk(0)'
+        mac_install = install_environment(mac_cd_arc) + [('ARCFW-SCSI-TARGETS', '0,3')]
+        mac_env = arc_environment('multi(0)scsi(2)disk(0)rdisk(0)', a.system_partition, a.os_partition,
+                                  a.osloader, a.winnt, a.os_options, a.identifier)
         ilen = xcoff_image_len(veneer)
         boot = (read(a.boot_script) if a.boot_script
-                else stage0_script(vlba, vblocks, len(veneer), ilen, a.fd_dev, a.cd_dev,
-                                   install_environment(a.cd_arc), oem_blocks=GEOM['total'],
-                                   title='start Windows NT Setup on an Apple Network Server 500/700',
+                else stage0_script(vlba, vblocks, len(veneer), ilen, a.fd_dev,
+                                   machine_targets(a.cd_dev, install_environment(a.cd_arc), 3, mac_install),
+                                   oem_blocks=GEOM['total'],
+                                   title='start Windows NT Setup on an Apple Network Server or a Power Macintosh 7500/8500',
                                    banner='starting Windows NT Setup').encode('ascii'))
         c, _ = fs.alloc(boot)
         root.append(fs.dirent('BOOT.OF', c, len(boot)))
-        bd = stage0_script(dlba, dblocks, len(dveneer), ilen, a.fd_dev, a.disk_dev, env,
+        bd = stage0_script(dlba, dblocks, len(dveneer), ilen, a.fd_dev,
+                           machine_targets(a.disk_dev, env, 0, mac_env),
                            title='boot the Windows NT system installed on the hard disk',
                            banner='starting the installed Windows NT').encode('ascii')
         c3, _ = fs.alloc(bd)

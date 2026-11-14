@@ -30,7 +30,7 @@ static VOID add_arg(ULONG *argc, const CHAR *name, const CHAR *value)
 VOID arcfw_main(ULONG snapshot)
 {
     of_init(snapshot);
-    con_printf("\nArcfw %s: ARC firmware for the Apple Network Server (powermac-nt-hal)\n", ARCFW_VERSION);
+    con_printf("\nArcfw %s: ARC firmware for the Bandit machines (powermac-nt-hal)\n", ARCFW_VERSION);
     con_printf("arcfw: little-endian since stage0; Open Firmware left in its factory mode, nothing in NVRAM changed\n");
     const CHAR *dbg = env_lookup("ARCFW-DEBUG");
     if (dbg) { const CHAR *e; arcfw_debug = 0; for (e = dbg; *e; e++) arcfw_debug = arcfw_debug * 16 + ((*e >= '0' && *e <= '9') ? *e - '0' : (toupper(*e) - 'A' + 10) & 15); }

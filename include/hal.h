@@ -17,6 +17,9 @@ extern ULONG HalpIrqlToMask[32];
 extern const UCHAR HalpInterruptToIrql[32];
 
 VOID HalpPrint(const char *fmt, ...);
+VOID HalpIdentifyMachine(PLOADER_PARAMETER_BLOCK LoaderBlock);    /* src/machine.c, first in phase 0 */
+ULONG HalpBanditCount(VOID);
+UCHAR HalpPciInterruptLine(ULONG bus, ULONG dev);                  /* Grand Central bit, or 0xFF */
 VOID HalpSeedEnvironment(PVOID ArcDiskInformation);
 VOID HalpPutChar(UCHAR c);
 BOOLEAN HalpInitializeDisplay(PLOADER_PARAMETER_BLOCK LoaderBlock);
@@ -47,6 +50,7 @@ VOID HalSweepDcacheRange(PVOID Address, ULONG Length);
 VOID HalSweepIcacheRange(PVOID Address, ULONG Length);
 VOID HalSweepIcache(VOID);
 ULONG HalGetBusData(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber, PVOID Buffer, ULONG Length);
+ULONG HalGetBusDataByOffset(BUS_DATA_TYPE BusDataType, ULONG BusNumber, ULONG SlotNumber, PVOID Buffer, ULONG Offset, ULONG Length);
 
 /* Cuda and ADB (source/cuda.c): the transport, and the three entry points a keyboard port
  * driver written to maciNTosh's contract imports from the HAL. */

@@ -17,16 +17,29 @@
 typedef struct { CM_PARTIAL_RESOURCE_LIST List; CM_PARTIAL_RESOURCE_DESCRIPTOR More[3]; } HALP_SCSI_RESOURCES;
 static HALP_SCSI_RESOURCES HalpScsiResources[2];
 
-/* the 53C825As sit on bus 0 at IDSEL 17 and 18, in the order the veneer numbers the adapters */
-static const UCHAR HalpScsiDevice[2] = { 17, 18 };
-static const UCHAR HalpScsiIrq[2] = { GC_IRQ_FWSCSI0, GC_IRQ_FWSCSI1 };
+/* The n-th 53C8xx on the PCI buses, in IDSEL order, which is the order the firmware numbers the
+ * NCRC810 adapters in: the Network Server's own pair at IDSEL 17 and 18, or a card in a Power
+ * Macintosh's slot.  Returns the bus and device, FALSE when there are fewer. */
+static BOOLEAN HalpFindScsiDevice(ULONG index, PULONG bus, PULONG dev)
+{
+    for (ULONG b = 0; b < HalpBanditCount(); b++)
+        for (ULONG d = PCI_MIN_IDSEL_DEVICE; d < 32; d++) {
+            ULONG id = 0;
+            if (HalGetBusDataByOffset(PCIConfiguration, b, d, &id, 0, 4) < 4) continue;
+            if (id != 0x00031000u && id != 0x00011000u) continue;    /* 53C825A (or 53C810) */
+            if (index-- == 0) { *bus = b; *dev = d; return TRUE; }
+        }
+    return FALSE;
+}
 
 static BOOLEAN HalpFixScsiAdapter(PCONFIGURATION_COMPONENT_DATA node, ULONG index)
 {
-    if (index >= 2) return FALSE;
-    ULONG dev = HalpScsiDevice[index];
+    ULONG bus, dev;
+    if (index >= 2 || !HalpFindScsiDevice(index, &bus, &dev)) return FALSE;
+    UCHAR irq = HalpPciInterruptLine(bus, dev);
+    if (irq == 0xFF) return FALSE;
     UCHAR cfg[64];
-    if (HalGetBusData(PCIConfiguration, 0, dev, cfg, sizeof cfg) < 64) return FALSE;
+    if (HalGetBusData(PCIConfiguration, bus, dev, cfg, sizeof cfg) < 64) return FALSE;
     ULONG vendev = *(PULONG)&cfg[0];
     if (vendev != 0x00031000u && vendev != 0x00011000u) return FALSE;   /* 53C825A or 53C810 */
     ULONG bar0 = *(PULONG)&cfg[0x10], bar1 = *(PULONG)&cfg[0x14];
@@ -41,11 +54,11 @@ static BOOLEAN HalpFixScsiAdapter(PCONFIGURATION_COMPONENT_DATA node, ULONG inde
     d->Type = CmResourceTypePort; d->ShareDisposition = 1; d->Flags = 1 /* CM_RESOURCE_PORT_IO */;
     d->u.Port.Start = (PHYSICAL_ADDRESS)(bar0 & ~0x3u); d->u.Port.Length = 0x100; d++; r->List.Count++;
     d->Type = CmResourceTypeInterrupt; d->ShareDisposition = 1; d->Flags = 0 /* level sensitive */;
-    d->u.Interrupt.Level = HalpScsiIrq[index]; d->u.Interrupt.Vector = HalpScsiIrq[index]; d->u.Interrupt.Affinity = 1; d++; r->List.Count++;
+    d->u.Interrupt.Level = irq; d->u.Interrupt.Vector = irq; d->u.Interrupt.Affinity = 1; d++; r->List.Count++;
     node->ConfigurationData = r;
     node->ComponentEntry.ConfigurationDataLength = sizeof(CM_PARTIAL_RESOURCE_LIST) + (r->List.Count - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR);
-    HalpPrint("HAL: ScsiAdapter %d (%s) -> mem %x io %x irq %d\n", index, node->ComponentEntry.Identifier,
-              LOW32(r->List.PartialDescriptors[0].u.Memory.Start), LOW32(r->List.PartialDescriptors[1].u.Port.Start), HalpScsiIrq[index]);
+    HalpPrint("HAL: ScsiAdapter %d (%s) at bus %d device %d -> mem %x io %x irq %d\n", index, node->ComponentEntry.Identifier,
+              bus, dev, LOW32(r->List.PartialDescriptors[0].u.Memory.Start), LOW32(r->List.PartialDescriptors[1].u.Port.Start), irq);
     return TRUE;
 }
 
