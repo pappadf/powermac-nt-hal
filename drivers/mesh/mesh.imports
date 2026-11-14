@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 powermac-nt-hal contributors
+# What mesh.sys imports: the SCSI port driver's miniport services, and two of the HAL's.
+[SCSIPORT.SYS]
+ScsiPortCompleteRequest
+ScsiPortGetDeviceBase
+ScsiPortGetPhysicalAddress
+ScsiPortGetUncachedExtension
+ScsiPortInitialize
+ScsiPortNotification
+[HAL.dll]
+HalDisplayString
+KeStallExecutionProcessor

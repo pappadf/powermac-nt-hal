@@ -290,6 +290,31 @@ driver = d1, adbport.sys, adbport
 [Config.adbport]
 """
 
+# The second SCSI entry: a Power Macintosh 7500/8500 as it shipped keeps its disk and CD-ROM on
+# the internal MESH bus, which only drivers/mesh serves.  Its own section, so a Network Server or
+# a machine with a Symbios card never needs it; on a stock 8500 it is a second trip through S,
+# Other.
+# A Power Macintosh 7500/8500's own display, Control, for which no driver on the CD exists:
+# drivers/pmctrl, a miniport for NT's own frame buffer driver framebuf.dll, which every install
+# copies from the CD (TXTSETUP.SIF lists it in its [Files]) and the miniport names in the
+# registry itself.  One driver key: SETUPLDR loads exactly one image per OEM class.
+OEM_DISPLAY_CONTROL = """
+[Display]
+pmctrl = "Power Macintosh 7500/8500 built-in video (Control) (powermac-nt-hal)", files.pmctrl
+
+[Files.Display.pmctrl]
+driver = d1, pmctrl.sys, pmctrl
+
+[Config.pmctrl]
+"""
+
+OEM_SCSI_MESH = """
+[Files.SCSI.mesh]
+driver = d1, mesh.sys, mesh
+
+[Config.mesh]
+"""
+
 
 # ---- the Open Firmware boot script ------------------------------------------------------------
 #
@@ -621,24 +646,28 @@ def target_select_lines(targets):
                  f'." powermac-nt-hal: {what}" cr then then')
     L += ['   nt-t 0= if',
           '      ." powermac-nt-hal: no SCSI controller this floppy knows: an Apple Network Server\'s" cr',
-          '      ." powermac-nt-hal: own, or a Symbios 53C825A card in a Power Macintosh 7500/8500 slot" cr',
+          '      ." powermac-nt-hal: own, a Symbios 53C825A card or a Power Macintosh 7500/8500\'s MESH" cr',
           '      exit',
           '   then']
     return L
 
 
-def machine_targets(ans_dev, ans_env, card_target, card_env):
+def machine_targets(ans_dev, ans_env, card_target, card_env, mesh_env):
     """The machines a floppy serves, in the order the script tries them: the Network Server, by
     its own first 53C825A (on either ROM the node is /bandit/53c825@11), with the paths given on
     the command line; then a Power Macintosh 7500 or 8500 with a Symbios 53C825A card in slot A1,
     B1 or C1 (IDSEL 13, 14, 15 -- the card has no FCode, so Open Firmware names it pci1000,3),
     where the CD-ROM and the disk share that card at `card_target` and arcfw numbers it scsi(2),
-    after the on-board 53C94 and MESH.  card_env(arc) builds that machine's environment."""
+    after the on-board 53C94 and MESH; and last a Power Macintosh 7500 or 8500 as it shipped,
+    with the disk and the CD-ROM on its internal MESH bus, scsi(1).  card_env and mesh_env are
+    those two machines' environments."""
     T = [('an Apple Network Server', '/bandit/53c825@11', ans_dev, ans_env)]
     for slot, dev in (('A1', 'D'), ('B1', 'E'), ('C1', 'F')):
         node = f'/bandit/pci1000,3@{dev}'
         T.append((f'a Power Macintosh with a Symbios card in slot {slot}', node,
                   f'{node}/sd@{card_target:x},0', card_env))
+    T.append(('a Power Macintosh 7500/8500, its internal SCSI bus', '/bandit/gc/mesh',
+              f'/bandit/gc/mesh/sd@{card_target:x},0', mesh_env))
     return T
 
 
@@ -803,7 +832,7 @@ def setup_script(real_base=0x3F00000, load_base=0x3E00000):
 
 
 
-def txtsetup_oem(display, adb=False):
+def txtsetup_oem(display, adb=False, mesh=False, control=False):
     defaults = ['\n[Defaults]', 'computer = shiner_up']
     if display:
         defaults.append('display = ans_cirrus')
@@ -812,8 +841,14 @@ def txtsetup_oem(display, adb=False):
     body = OEM_HEADER + '\n'.join(defaults) + '\n' + OEM_COMPUTER
     if display:
         body += OEM_DISPLAY
-    if adb:
-        body += OEM_SCSI
+    elif control:
+        body += OEM_DISPLAY_CONTROL
+    if adb or mesh:
+        scsi = OEM_SCSI if adb else '\n[SCSI]\n'
+        if mesh:
+            scsi = scsi.replace('\n[Files.SCSI.', 'mesh = "Power Macintosh 7500/8500 internal SCSI (MESH) (powermac-nt-hal)"\n\n[Files.SCSI.', 1) if adb else scsi + 'mesh = "Power Macintosh 7500/8500 internal SCSI (MESH) (powermac-nt-hal)"\n'
+            scsi += OEM_SCSI_MESH
+        body += scsi
     return body + '\n[Strings]\n'
 
 
@@ -833,6 +868,12 @@ def main():
                          'loads any number of drivers for. Default: build/adbport.sys, this '
                          "project's own; pass another binary to try it in the same slot")
     ap.add_argument('--no-adb-driver', action='store_true', help='leave the [SCSI] class off the disk')
+    ap.add_argument('--control-driver', metavar='PATH',
+                    help="the video miniport for a Power Macintosh 7500/8500's Control display, "
+                         'installed as PMCTRL.SYS and offered under the display prompt')
+    ap.add_argument('--mesh-driver', metavar='PATH',
+                    help="the SCSI miniport for a Power Macintosh 7500/8500's internal MESH bus, "
+                         'installed as MESH.SYS and offered under the SCSI prompt beside the ADB driver')
     ap.add_argument('--boot-script', metavar='PATH',
                     help='use this file as \\BOOT.OF instead of the generated one')
     ap.add_argument('--disk-veneer', metavar='PATH',
@@ -943,9 +984,11 @@ def main():
                               ('I8042PRT.SYS', a.kbd, root),
                               ('CIRRUS.SYS', a.display_driver, root),
                               ('CIRRUS.DLL', a.display_dll, root),
-                              ('ADBPORT.SYS', adb_driver, root)):
+                              ('ADBPORT.SYS', adb_driver, root),
+                              ('MESH.SYS', a.mesh_driver, root),
+                              ('PMCTRL.SYS', a.control_driver, root)):
         if path is None:
-            if name not in ('SETUPLDR', 'TXTSETUP.SIF', 'I8042PRT.SYS'):   # the 2.2 extras
+            if name not in ('SETUPLDR', 'TXTSETUP.SIF', 'I8042PRT.SYS', 'MESH.SYS', 'PMCTRL.SYS'):   # the 2.2 extras
                 print(f'  ({name} omitted -- no path given)')
             continue
         data = read(path)
@@ -973,17 +1016,21 @@ def main():
         mac_install = install_environment(mac_cd_arc) + [('ARCFW-SCSI-TARGETS', '0,3')]
         mac_env = arc_environment('multi(0)scsi(2)disk(0)rdisk(0)', a.system_partition, a.os_partition,
                                   a.osloader, a.winnt, a.os_options, a.identifier)
+        # the same machine as it shipped: the disk at ID 0 and the CD-ROM at ID 3 on MESH, scsi(1)
+        mesh_install = install_environment('multi(0)scsi(1)cdrom(3)fdisk(0)') + [('ARCFW-SCSI-TARGETS', '0,3')]
+        mesh_env = arc_environment('multi(0)scsi(1)disk(0)rdisk(0)', a.system_partition, a.os_partition,
+                                   a.osloader, a.winnt, a.os_options, a.identifier)
         ilen = xcoff_image_len(veneer)
         boot = (read(a.boot_script) if a.boot_script
                 else stage0_script(vlba, vblocks, len(veneer), ilen, a.fd_dev,
-                                   machine_targets(a.cd_dev, install_environment(a.cd_arc), 3, mac_install),
+                                   machine_targets(a.cd_dev, install_environment(a.cd_arc), 3, mac_install, mesh_install),
                                    oem_blocks=GEOM['total'],
                                    title='start Windows NT Setup on an Apple Network Server or a Power Macintosh 7500/8500',
                                    banner='starting Windows NT Setup').encode('ascii'))
         c, _ = fs.alloc(boot)
         root.append(fs.dirent('BOOT.OF', c, len(boot)))
         bd = stage0_script(dlba, dblocks, len(dveneer), ilen, a.fd_dev,
-                           machine_targets(a.disk_dev, env, 0, mac_env),
+                           machine_targets(a.disk_dev, env, 0, mac_env, mesh_env),
                            title='boot the Windows NT system installed on the hard disk',
                            banner='starting the installed Windows NT').encode('ascii')
         c3, _ = fs.alloc(bd)
@@ -1036,7 +1083,7 @@ def main():
         ppc.append(fs.dirent('I8042PRT.SYS', c, len(data)))
         print('  \\PPC\\I8042PRT.SYS   a second copy, for booting from this disk')
 
-    oem = read(a.oem) if a.oem else txtsetup_oem(display, adb_driver is not None).encode('ascii')
+    oem = read(a.oem) if a.oem else txtsetup_oem(display, adb_driver is not None, a.mesh_driver is not None, a.control_driver is not None).encode('ascii')
     oc, _ = fs.alloc(oem)
 
     root = [fs.subdir('PPC', ppc), fs.dirent('TXTSETUP.OEM', oc, len(oem))] + root

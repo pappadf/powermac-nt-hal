@@ -63,6 +63,7 @@ static inline void   MmioWrite16(ULONG phys, USHORT v)  { *(volatile USHORT *)IO
 #define SCC_RR0_RX_AVAIL 0x01
 
 /* Grand Central interrupt bits that matter to the HAL (ANS re-purposes the external lines) */
+#define GC_IRQ_MESH      13   /* a Power Macintosh 7500/8500's internal SCSI cell; the Network Server has none */
 #define GC_IRQ_SCC_A     15
 #define GC_IRQ_SCC_B     16
 #define GC_IRQ_FWSCSI0   22   /* EXT2 — 53C825A #0 */

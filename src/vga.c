@@ -23,6 +23,11 @@ BOOLEAN HalpFbActive = FALSE;
 static volatile UCHAR *HalpFb;      /* mapped framebuffer */
 ULONG HalpFbPhys;                   /* BAR0: the 1 MB linear VRAM, for the legacy-window alias in pci.c */
 static ULONG HalpFbStride, HalpFbWpx, HalpFbHpx;
+/* Where pixel 0 is in the mapping, and the byte swizzle a store needs: 0 for the 54M30, behind
+ * Bandit, which reverses the byte lanes for this little-endian CPU; 7 for a Power Macintosh's
+ * Control, behind Chaos, which does not (src/control.c). */
+static ULONG HalpFbOrigin, HalpFbSwizzle;
+#define PX(i) HalpFb[(HalpFbOrigin + (i)) ^ HalpFbSwizzle]
 static POEM_FONT_FILE_HEADER HalpFont;
 static ULONG HalpCharW, HalpCharH, HalpBytesPerRow;
 ULONG HalpFbCols, HalpFbRows, HalpFbCol, HalpFbRow;
@@ -84,17 +89,37 @@ static VOID HalpVgaMode640x480x8(VOID)
 
 static VOID HalpFbClear(VOID)
 {
-    for (ULONG i = 0; i < HalpFbStride * HalpFbHpx; i++) HalpFb[i] = BG;
+    for (ULONG i = 0; i < HalpFbStride * HalpFbHpx; i++) PX(i) = BG;
+}
+
+/* The console on a framebuffer the caller has mapped and put in 8-bit mode, inks set: the font
+ * SETUPLDR loaded, a clear screen, the cursor home. */
+BOOLEAN HalpFbStart(PLOADER_PARAMETER_BLOCK LoaderBlock, volatile UCHAR *Fb, ULONG Origin, ULONG Swizzle,
+                    ULONG Stride, ULONG Width, ULONG Height)
+{
+    HalpFont = (POEM_FONT_FILE_HEADER)LoaderBlock->OemFontFile;
+    if (!HalpFont) { HalpPrint("HAL: no OEM font; framebuffer console disabled\n"); return FALSE; }
+    HalpCharW = HalpFont->PixelWidth; HalpCharH = HalpFont->PixelHeight;
+    HalpBytesPerRow = (HalpCharW + 7) / 8;
+    if (HalpCharW == 0 || HalpCharH == 0) { HalpPrint("HAL: font geometry zero\n"); return FALSE; }
+    HalpFb = Fb; HalpFbOrigin = Origin; HalpFbSwizzle = Swizzle;
+    HalpFbStride = Stride; HalpFbWpx = Width; HalpFbHpx = Height;
+    HalpFbClear();
+    HalpFbCols = HalpFbWpx / HalpCharW; HalpFbRows = HalpFbHpx / HalpCharH;
+    HalpFbCol = 0; HalpFbRow = 0;
+    HalpFbActive = TRUE;
+    return TRUE;
 }
 
 BOOLEAN HalpFbInit(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
-    /* Confirm the 54M30 is where we expect and turn on its decoders. */
+    /* Confirm the 54M30 is where we expect and turn on its decoders; a Power Macintosh without
+     * one has its own Control instead. */
     UCHAR cfg[64];
-    if (HalGetBusData(PCIConfiguration, C54M30_BUS, C54M30_DEV, cfg, sizeof cfg) < 64) { HalpPrint("HAL: 54M30 config read short\n"); return FALSE; }
-    if (*(PUSHORT)&cfg[0] != C54M30_VENDOR || *(PUSHORT)&cfg[2] != C54M30_DEVID) {
-        HalpPrint("HAL: 54M30 not found at bus %d dev %d (id %x)\n", C54M30_BUS, C54M30_DEV, *(PULONG)&cfg[0]);
-        return FALSE;
+    if (HalGetBusData(PCIConfiguration, C54M30_BUS, C54M30_DEV, cfg, sizeof cfg) < 64 ||
+        *(PUSHORT)&cfg[0] != C54M30_VENDOR || *(PUSHORT)&cfg[2] != C54M30_DEVID) {
+        HalpPrint("HAL: no 54M30 at bus %d dev %d\n", C54M30_BUS, C54M30_DEV);
+        return HalpControlInit(LoaderBlock);
     }
     /* enable I/O + memory decode (command register, offset 4) */
     { UCHAR c4[2] = { 0x03, 0x00 }; HalSetBusDataByOffset(PCIConfiguration, C54M30_BUS, C54M30_DEV, c4, 4, 2); }
@@ -104,24 +129,14 @@ BOOLEAN HalpFbInit(PLOADER_PARAMETER_BLOCK LoaderBlock)
     HalpPrint("HAL: 54M30 bar0 %x bar1 %x cmd %X\n", bar0, bar1, *(PUSHORT)&cfg[4]);
     if (bar0 == 0) { HalpPrint("HAL: 54M30 framebuffer BAR unassigned\n"); return FALSE; }
     HalpFbPhys = bar0;
-    HalpFb = (volatile UCHAR *)MmMapIoSpace((PHYSICAL_ADDRESS)bar0, 0x100000, FALSE);   /* 1 MB VRAM, uncached */
-    if (!HalpFb) { HalpPrint("HAL: 54M30 framebuffer map failed (bar %x)\n", bar0); return FALSE; }
-
-    HalpFont = (POEM_FONT_FILE_HEADER)LoaderBlock->OemFontFile;
-    if (!HalpFont) { HalpPrint("HAL: no OEM font; framebuffer console disabled\n"); return FALSE; }
-    HalpCharW = HalpFont->PixelWidth; HalpCharH = HalpFont->PixelHeight;
-    HalpBytesPerRow = (HalpCharW + 7) / 8;
-    HalpPrint("HAL: OEM font %x  %dx%d  chars %x..%x\n", (ULONG)HalpFont, HalpCharW, HalpCharH,
-              HalpFont->FirstCharacter, HalpFont->LastCharacter);
-    if (HalpCharW == 0 || HalpCharH == 0) { HalpPrint("HAL: font geometry zero\n"); return FALSE; }
+    volatile UCHAR *fb = (volatile UCHAR *)MmMapIoSpace((PHYSICAL_ADDRESS)bar0, 0x100000, FALSE);   /* 1 MB VRAM, uncached */
+    if (!fb) { HalpPrint("HAL: 54M30 framebuffer map failed (bar %x)\n", bar0); return FALSE; }
+    if (!LoaderBlock->OemFontFile) { HalpPrint("HAL: no OEM font; framebuffer console disabled\n"); return FALSE; }
 
     HalpVgaMode640x480x8();
     HalpDacEntry(BG, 0x00, 0x00, 0x2A);   /* paper: blue */
     HalpDacEntry(FG, 0x3F, 0x3F, 0x3F);   /* ink: white */
-    HalpFbClear();
-    HalpFbCols = HalpFbWpx / HalpCharW; HalpFbRows = HalpFbHpx / HalpCharH;
-    HalpFbCol = 0; HalpFbRow = 0;
-    HalpFbActive = TRUE;
+    if (!HalpFbStart(LoaderBlock, fb, 0, 0, 640, 640, 480)) return FALSE;
     HalpPrint("HAL: 54M30 console %dx%d, font %dx%d, %dx%d chars, fb %x\n",
               HalpFbWpx, HalpFbHpx, HalpCharW, HalpCharH, HalpFbCols, HalpFbRows, bar0);
     return TRUE;
@@ -131,20 +146,20 @@ static VOID HalpFbScroll(VOID)
 {
     ULONG line = HalpCharH * HalpFbStride;
     ULONG keep = (HalpFbRows - 1) * line;
-    for (ULONG i = 0; i < keep; i++) HalpFb[i] = HalpFb[i + line];
-    for (ULONG i = 0; i < line; i++) HalpFb[keep + i] = BG;
+    for (ULONG i = 0; i < keep; i++) PX(i) = PX(i + line);
+    for (ULONG i = 0; i < line; i++) PX(keep + i) = BG;
 }
 
 static VOID HalpFbGlyph(UCHAR ch)
 {
     if (ch < HalpFont->FirstCharacter || ch > HalpFont->LastCharacter) ch = HalpFont->DefaultCharacter;
     const UCHAR *glyph = (const UCHAR *)HalpFont + HalpFont->Map[ch - HalpFont->FirstCharacter].Offset;
-    volatile UCHAR *base = HalpFb + HalpFbRow * HalpCharH * HalpFbStride + HalpFbCol * HalpCharW;
+    ULONG base = HalpFbRow * HalpCharH * HalpFbStride + HalpFbCol * HalpCharW;
     for (ULONG y = 0; y < HalpCharH; y++) {
         ULONG bits = 0;
         for (ULONG b = 0; b < HalpBytesPerRow; b++) bits |= (ULONG)glyph[b * HalpCharH + y] << (24 - b * 8);
-        volatile UCHAR *row = base + y * HalpFbStride;
-        for (ULONG x = 0; x < HalpCharW; x++) { row[x] = (bits & 0x80000000u) ? FG : BG; bits <<= 1; }
+        ULONG row = base + y * HalpFbStride;
+        for (ULONG x = 0; x < HalpCharW; x++) { PX(row + x) = (bits & 0x80000000u) ? FG : BG; bits <<= 1; }
     }
 }
 

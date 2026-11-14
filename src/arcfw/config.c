@@ -190,7 +190,8 @@ static VOID add_scsi_adapter(PARC_NODE parent, OF_PHANDLE node, const CHAR *path
      * Macintosh slot, whose node carries no model -- the card has no FCode -- only its PCI ids */
     ULONG vendor = 0;
     of_get_int(node, "vendor-id", &vendor);
-    const CHAR *ident = strncmp(model, "NCR,", 4) == 0 || (pci && vendor == 0x1000) ? "NCRC810" : "UNKNOWN SCSI";
+    const CHAR *ident = strncmp(model, "NCR,", 4) == 0 || (pci && vendor == 0x1000) ? "NCRC810"
+                      : strcmp(model, "AAPL,343S1146") == 0 ? "MESH" : "UNKNOWN SCSI";
     PARC_NODE a = new_node(parent, AdapterClass, ScsiAdapter, scsi_adapters++, 0, ident);
     a->OfPhandle = node; a->OfPath = strdup_(path);
     if (pci) {
@@ -208,6 +209,20 @@ static VOID add_scsi_adapter(PARC_NODE parent, OF_PHANDLE node, const CHAR *path
         desc_memory(&l->PartialDescriptors[0], mem, memlen ? memlen : 0x100);
         desc_port(&l->PartialDescriptors[1], io, iolen ? iolen : 0x100);
         desc_interrupt(&l->PartialDescriptors[2], irq, irq);
+        probe_scsi(a, node, path);
+    } else if (strcmp(model, "AAPL,343S1146") == 0) {
+        /* MESH, a Power Macintosh 7500/8500's internal bus: the cell and its DBDMA channel
+         * (reg, offsets into Grand Central) and its Grand Central interrupt, the first of
+         * AAPL,interrupts (the second is the DMA channel's) */
+        ULONG reg[4] = { 0x18000, 0x100, 0x8A00, 0x100 }, aa[5], gc = 0xF3000000u, irq[2] = { 13, 10 };
+        of_get_ints(node, "reg", reg, sizeof reg);
+        OF_PHANDLE p = of_parent(node);
+        if (p && of_get_ints(p, "assigned-addresses", aa, sizeof aa) >= 20 && aa[2]) gc = aa[2];
+        of_get_ints(node, "AAPL,interrupts", irq, sizeof irq);
+        PCM_PARTIAL_RESOURCE_LIST l = new_list(a, 3, 0);
+        desc_memory(&l->PartialDescriptors[0], gc + reg[0], reg[1]);
+        desc_memory(&l->PartialDescriptors[1], gc + reg[2], reg[3]);
+        desc_interrupt(&l->PartialDescriptors[2], irq[0], irq[0]);
         probe_scsi(a, node, path);
     } else {
         PCM_PARTIAL_RESOURCE_LIST l = new_list(a, 1, 0);
@@ -279,6 +294,21 @@ static VOID add_gc_devices(PARC_NODE pci, OF_PHANDLE gc, const CHAR *gc_path)
 }
 
 /* ---- a PCI bridge (Bandit) and what hangs off it ------------------------------------------ */
+/* ---- a display controller and its monitor --------------------------------------------------- */
+static VOID add_display(PARC_NODE pci, OF_PHANDLE c, const CHAR *name, const CHAR *path)
+{
+    CHAR model[32]; of_get_str(c, "model", model, sizeof model);
+    PARC_NODE v = new_node(pci, ControllerClass, DisplayController, 0, ARC_FLAG_CONSOLEOUT | ARC_FLAG_OUTPUT, model[0] ? model : name);
+    v->OfPhandle = c; v->OfPath = strdup_(path);
+    ULONG aa[20]; LONG n = of_get_ints(c, "assigned-addresses", aa, sizeof aa);
+    ULONG fb = 0, fblen = 0x01000000;
+    for (LONG i = 0; i + 4 < n / 4 + 1 && i + 4 <= n / 4; i += 5)
+        if (((aa[i] >> 24) & 3) == 2 && aa[i + 4] >= 0x100000) { fb = aa[i + 2]; fblen = aa[i + 4]; }
+    PCM_PARTIAL_RESOURCE_LIST dl = new_list(v, 1, 0);
+    desc_memory(&dl->PartialDescriptors[0], fb, fblen);
+    new_node(v, PeripheralClass, MonitorPeripheral, 0, ARC_FLAG_CONSOLEOUT | ARC_FLAG_OUTPUT, "1024x768");
+}
+
 static VOID add_bandit(OF_PHANDLE bandit, ULONG key)
 {
     ULONG reg[4] = { 0xF2000000u, 0x02000000u };
@@ -302,16 +332,21 @@ static VOID add_bandit(OF_PHANDLE bandit, ULONG key)
         } else if (strcmp(dt, "dbdma") == 0 || strcmp(name, "gc") == 0) {
             add_gc_devices(pci, c, path);
         } else if (strcmp(dt, "display") == 0 || (!dt[0] && (cls >> 16) == 0x03u)) {
-            CHAR model[32]; of_get_str(c, "model", model, sizeof model);
-            PARC_NODE v = new_node(pci, ControllerClass, DisplayController, 0, ARC_FLAG_CONSOLEOUT | ARC_FLAG_OUTPUT, model[0] ? model : name);
-            v->OfPhandle = c; v->OfPath = strdup_(path);
-            ULONG aa[20]; LONG n = of_get_ints(c, "assigned-addresses", aa, sizeof aa);
-            ULONG fb = 0, fblen = 0x01000000;
-            for (LONG i = 0; i + 4 < n / 4 + 1 && i + 4 <= n / 4; i += 5)
-                if (((aa[i] >> 24) & 3) == 2 && aa[i + 4] >= 0x100000) { fb = aa[i + 2]; fblen = aa[i + 4]; }
-            PCM_PARTIAL_RESOURCE_LIST dl = new_list(v, 1, 0);
-            desc_memory(&dl->PartialDescriptors[0], fb, fblen);
-            new_node(v, PeripheralClass, MonitorPeripheral, 0, ARC_FLAG_CONSOLEOUT | ARC_FLAG_OUTPUT, "1024x768");
+            add_display(pci, c, name, path);
+        }
+    }
+    /* A Power Macintosh 7500/8500's own display, Control, is on the Chaos bridge, which Open
+     * Firmware lists beside Bandit and not as a PCI bus; it is listed under the first Bandit's
+     * adapter, where a display card would be.  Its identifier is unknown to SETUPLDR, which
+     * then asks for a driver: the floppy's (drivers/pmctrl). */
+    if (key == 0) {
+        OF_PHANDLE chaos = of_finddevice("/chaos");
+        for (OF_PHANDLE c = chaos != OF_NONE ? of_child(chaos) : 0; c; c = of_peer(c)) {
+            CHAR name[32], dt[32], path[128];
+            of_get_str(c, "name", name, sizeof name);
+            of_get_str(c, "device_type", dt, sizeof dt);
+            of_package_to_path(c, path, sizeof path);
+            if (strcmp(dt, "display") == 0) add_display(pci, c, name, path);
         }
     }
 }

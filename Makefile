@@ -25,7 +25,7 @@ SRCS_S = $(wildcard src/*.S)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS_C)) $(patsubst src/%.S,$(BUILD)/%.o,$(SRCS_S)) \
        $(BUILD)/imports.o $(BUILD)/exports.o
 
-all: $(BUILD)/hal.dll $(BUILD)/adbport.sys $(BUILD)/arcfw.xcf
+all: $(BUILD)/hal.dll $(BUILD)/adbport.sys $(BUILD)/mesh.sys $(BUILD)/pmctrl.sys $(BUILD)/arcfw.xcf
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -76,6 +76,62 @@ $(BUILD)/adbport.elf: $(ADB_OBJS) $(ADB)/adbport.ld
 $(BUILD)/adbport.sys: $(BUILD)/adbport.elf $(ADB)/adbport.exports $(TOOLS)/elf2pe.py
 	python3 $(TOOLS)/elf2pe.py $< $@ --exports $(ADB)/adbport.exports --dllname adbport.sys \
 	        --entry desc_DriverEntry --import-dll ntoskrnl.exe --import-dll HAL.dll
+
+# ---- mesh.sys: the SCSI miniport for a Power Macintosh 7500/8500's internal MESH bus (drivers/mesh) ----
+MESHD     = drivers/mesh
+MESH_SRCS = $(wildcard $(MESHD)/*.c)
+MESH_OBJS = $(patsubst $(MESHD)/%.c,$(BUILD)/mesh/%.o,$(MESH_SRCS)) \
+            $(BUILD)/mesh/thunk.o $(BUILD)/mesh/imports.o $(BUILD)/mesh/exports.o
+
+$(BUILD)/mesh:
+	mkdir -p $(BUILD)/mesh
+
+$(BUILD)/mesh/imports.S $(BUILD)/mesh/exports.S: $(MESHD)/mesh.imports $(MESHD)/mesh.exports $(TOOLS)/mkstubs.py | $(BUILD)/mesh
+	python3 $(TOOLS)/mkstubs.py $(MESHD)/mesh.imports $(MESHD)/mesh.exports $(BUILD)/mesh/imports.S $(BUILD)/mesh/exports.S
+
+$(BUILD)/mesh/%.o: $(MESHD)/%.c include/*.h | $(BUILD)/mesh
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/mesh/%.o: $(MESHD)/%.S | $(BUILD)/mesh
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/mesh/%.o: $(BUILD)/mesh/%.S | $(BUILD)/mesh
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/mesh.elf: $(MESH_OBJS) $(MESHD)/mesh.ld
+	$(LLD) -T $(MESHD)/mesh.ld --emit-relocs -nostdlib -static -o $@ $(MESH_OBJS)
+
+$(BUILD)/mesh.sys: $(BUILD)/mesh.elf $(MESHD)/mesh.exports $(TOOLS)/elf2pe.py
+	python3 $(TOOLS)/elf2pe.py $< $@ --exports $(MESHD)/mesh.exports --dllname mesh.sys \
+	        --entry desc_DriverEntry --import-dll SCSIPORT.SYS --import-dll HAL.dll
+
+# ---- pmctrl.sys: the video miniport for a Power Macintosh 7500/8500's Control display (drivers/pmctrl) ----
+CTLD     = drivers/pmctrl
+CTL_SRCS = $(wildcard $(CTLD)/*.c)
+CTL_OBJS = $(patsubst $(CTLD)/%.c,$(BUILD)/pmctrl/%.o,$(CTL_SRCS)) \
+            $(BUILD)/pmctrl/thunk.o $(BUILD)/pmctrl/imports.o $(BUILD)/pmctrl/exports.o
+
+$(BUILD)/pmctrl:
+	mkdir -p $(BUILD)/pmctrl
+
+$(BUILD)/pmctrl/imports.S $(BUILD)/pmctrl/exports.S: $(CTLD)/pmctrl.imports $(CTLD)/pmctrl.exports $(TOOLS)/mkstubs.py | $(BUILD)/pmctrl
+	python3 $(TOOLS)/mkstubs.py $(CTLD)/pmctrl.imports $(CTLD)/pmctrl.exports $(BUILD)/pmctrl/imports.S $(BUILD)/pmctrl/exports.S
+
+$(BUILD)/pmctrl/%.o: $(CTLD)/%.c include/*.h | $(BUILD)/pmctrl
+	$(CLANG) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/pmctrl/%.o: $(CTLD)/%.S | $(BUILD)/pmctrl
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/pmctrl/%.o: $(BUILD)/pmctrl/%.S | $(BUILD)/pmctrl
+	$(CLANG) $(ASFLAGS) $< -o $@
+
+$(BUILD)/pmctrl.elf: $(CTL_OBJS) $(CTLD)/pmctrl.ld
+	$(LLD) -T $(CTLD)/pmctrl.ld --emit-relocs -nostdlib -static -o $@ $(CTL_OBJS)
+
+$(BUILD)/pmctrl.sys: $(BUILD)/pmctrl.elf $(CTLD)/pmctrl.exports $(TOOLS)/elf2pe.py
+	python3 $(TOOLS)/elf2pe.py $< $@ --exports $(CTLD)/pmctrl.exports --dllname pmctrl.sys \
+	        --entry desc_DriverEntry --import-dll VIDEOPRT.SYS --import-dll ntoskrnl.exe --import-dll HAL.dll
 
 disasm: $(BUILD)/hal.elf
 	$(OBJDUMP) -d -r $< > $(BUILD)/hal.lst
