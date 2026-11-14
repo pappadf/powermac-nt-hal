@@ -15,7 +15,8 @@
  * 54M30 at 15.  And the Power Macintosh 7500 and 8500 (Apple, "Power Macintosh 7500 and 8500
  * Computers" Developer Note): one Bandit, three slots A1, B1 and C1 at IDSEL 13, 14 and 15 on
  * Grand Central's external interrupts 23, 24 and 25 -- the slot's AAPL,interrupts in Open
- * Firmware's device tree says the same -- and no on-board PCI device but Grand Central. */
+ * Firmware's device tree says the same -- and no on-board PCI device but Grand Central, whose
+ * entry is its MESH cell's line: drivers/mesh is the one NT driver that claims Grand Central. */
 #include "hal.h"
 
 typedef struct {
@@ -33,7 +34,7 @@ static const HALP_MACHINE HalpNetworkServer = {
 };
 static const HALP_MACHINE HalpPowerMac8500 = {
     "Power Macintosh 7500/8500", 1,
-    { [13] = 23, [14] = 24, [15] = 25 },
+    { [13] = 23, [14] = 24, [15] = 25, [16] = GC_IRQ_MESH },
     { 0 },
 };
 

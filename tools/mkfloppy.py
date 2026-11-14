@@ -39,10 +39,13 @@ def main():
     ap.add_argument('--out', default='build/boot-floppy.img', help='the floppy to write')
     ap.add_argument('--hal', default='build/hal.dll')
     ap.add_argument('--adb-driver', default='build/adbport.sys')
+    ap.add_argument('--mesh-driver', default='build/mesh.sys')
+    ap.add_argument('--control-driver', default='build/pmctrl.sys')
     ap.add_argument('--arc-firmware', default='build/arcfw.xcf')
     a = ap.parse_args()
 
-    for path, what in ((a.hal, 'the HAL'), (a.adb_driver, 'the ADB driver'),
+    for path, what in ((a.hal, 'the HAL'), (a.adb_driver, 'the ADB driver'), (a.mesh_driver, 'the MESH driver'),
+                       (a.control_driver, 'the Control driver'),
                        (a.arc_firmware, 'the ARC firmware')):
         if not os.path.exists(os.path.join(ROOT, path)):
             raise SystemExit(f'{path} is missing -- run `make` first ({what})')
@@ -55,12 +58,14 @@ def main():
                '--out', a.out,
                '--arc-firmware', a.arc_firmware,
                '--hal', a.hal,
-               '--adb-driver', a.adb_driver], 'mkbootfloppy')
+               '--adb-driver', a.adb_driver,
+               '--mesh-driver', a.mesh_driver,
+               '--control-driver', a.control_driver], 'mkbootfloppy')
     for line in out.splitlines():
         if 'ARCFW.XCF' in line or 'ARCFW.EXE' in line or 'bytes, FAT12' in line or 'redistributed' in line:
             print(f'  {line.strip()}')
 
-    print(f'\n{a.out} is ready: this project\'s own firmware, HAL and driver, and nothing else.')
+    print(f'\n{a.out} is ready: this project\'s own firmware, HAL and drivers, and nothing else.')
 
 
 if __name__ == '__main__':

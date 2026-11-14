@@ -246,6 +246,16 @@ NTSTATUS HalAssignSlotResources(PUNICODE_STRING RegistryPath, PUNICODE_STRING Dr
         }
         n++;
     }
+    /* Grand Central (Apple 106B:0002) has no BAR: the CPU reaches its 128 KB island at
+     * 0xF3000000 by pass-through cycles (Network Server Hardware Developer Notes 4.2.1), so the
+     * board's fixed range is reported in its place.  That is what scsiport needs to hand the
+     * island's MESH cell to drivers/mesh. */
+    if (n == 0 && cfg[0] == 0x6B && cfg[1] == 0x10 && cfg[2] == 0x02 && cfg[3] == 0x00) {
+        desc[n].Type = CmResourceTypeMemory; desc[n].ShareDisposition = CmResourceShareDeviceExclusive;
+        desc[n].Flags = CM_RESOURCE_MEMORY_READ_WRITE; desc[n].u.Memory.Start = (PHYSICAL_ADDRESS)0xF3000000u;
+        desc[n].u.Memory.Length = 0x20000;
+        n++;
+    }
     UCHAR irq = HalpPciInterruptLine(BusNumber, dev);
     if (irq != 0xFF) {
         desc[n].Type = CmResourceTypeInterrupt; desc[n].ShareDisposition = CmResourceShareDeviceExclusive;

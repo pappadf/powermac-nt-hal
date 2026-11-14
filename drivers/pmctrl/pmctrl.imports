@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Copyright (C) 2026 powermac-nt-hal contributors
+# What pmctrl.sys imports: the video port driver's miniport services, the kernel's contiguous
+# memory, DPC and timer, and the HAL's console.
+[VIDEOPRT.SYS]
+VideoPortGetDeviceBase
+VideoPortInitialize
+[ntoskrnl.exe]
+ExAllocatePool
+KeInitializeDpc
+KeInitializeTimer
+KeSetTimerEx
+MmAllocateContiguousMemory
+MmGetPhysicalAddress
+RtlWriteRegistryValue
+[HAL.dll]
+HalDisplayString

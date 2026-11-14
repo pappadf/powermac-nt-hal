@@ -75,6 +75,10 @@ extern BOOLEAN HalpFbActive;
 extern ULONG HalpFbCols, HalpFbRows, HalpFbCol, HalpFbRow;
 ULONG HalpVgaVramPhys(VOID);
 BOOLEAN HalpFbInit(PLOADER_PARAMETER_BLOCK LoaderBlock);
+BOOLEAN HalpFbStart(PLOADER_PARAMETER_BLOCK LoaderBlock, volatile UCHAR *Fb, ULONG Origin, ULONG Swizzle,
+                    ULONG Stride, ULONG Width, ULONG Height);
+BOOLEAN HalpControlInit(PLOADER_PARAMETER_BLOCK LoaderBlock);   /* src/control.c */
+BOOLEAN HalpCudaIicWrite(UCHAR Device, UCHAR Register, UCHAR Value);
 VOID HalpFbPutChar(UCHAR ch);
 ULONG HalGetBusData(BUS_DATA_TYPE, ULONG, ULONG, PVOID, ULONG);
 ULONG HalSetBusData(BUS_DATA_TYPE, ULONG, ULONG, PVOID, ULONG);

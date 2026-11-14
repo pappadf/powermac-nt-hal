@@ -429,3 +429,13 @@ BOOLEAN HalPxiCommandAdb(UCHAR Command, PUCHAR Data, UCHAR Length, BOOLEAN Poll)
     HalpAdbDeliver(&reply[1], n - 1);
     return TRUE;
 }
+
+/* One write to an I2C device behind Cuda: pseudo-command $22 (GET/SET IIC), the device, its
+ * register and the value.  The Power Macintosh 7500/8500's pixel clock synthesiser is device
+ * $50, programmed by three such writes per mode (src/control.c).  FALSE when Cuda did not
+ * answer. */
+BOOLEAN HalpCudaIicWrite(UCHAR Device, UCHAR Register, UCHAR Value)
+{
+    UCHAR in[4] = { 0x22, Device, Register, Value }, reply[8];
+    return HalpCudaRequest(CUDA_PKT_PSEUDO, in, sizeof in, reply, sizeof reply) != 0;
+}
